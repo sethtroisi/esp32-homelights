@@ -16,8 +16,7 @@
 
 #include "FastLED.h"
 
-#include "ota.cpp"
-
+#include "ota.h"
 
 #define NUM_STRIPS 1
 
@@ -49,7 +48,7 @@ void FASTLED_safe_show() {
 
 void pattern_test(void *pvParameters) {
   CRGB colors[] = {
-    CRGB::Red,
+    CRGB::Green,
     CRGB::RoyalBlue,
     CRGB::Violet,
     CRGB::FairyLightNCC,
@@ -124,8 +123,10 @@ extern "C" {
 }
 
 void app_main() {
+  TaskHandle_t *xHandle = NULL;
+
   printf("Trying to establish OTA capability\n");
-  setup_and_poll_ota();
+  setup_and_poll_ota(xHandle);
   delay(1000);
 
   printf("Calling addLeds<>()\n");
@@ -143,5 +144,5 @@ void app_main() {
   // change the task below to one of the functions above to try different patterns
   printf("Creating task for led testing\n");
 
-  xTaskCreatePinnedToCore(&pattern_test, "blinkLeds", 4000, NULL, 5, NULL, 0);
+  xTaskCreatePinnedToCore(&pattern_test, "blinkLeds", 4000, NULL, 5, xHandle, 0);
 }

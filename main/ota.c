@@ -27,8 +27,19 @@
 static const char *bind_interface_name = "sta";
 static const char *TAG = "ota";
 
+/**
+ * Let's Encrypt issues 90 day certs to me.
+ * Retrieved from https://letsencrypt.org/certificates/
+ * https://letsencrypt.org/certs/lets-encrypt-r3.pem
+ */
+// I wonder why I need end
+extern const uint8_t lets_encrypt_ca_pem_start[] asm("_binary_lets_encrypt_r3_pem_start");
+extern const uint8_t lets_encrypt_ca_pem_end[]   asm("_binary_lets_encrypt_r3_pem_end");
+
 // TODO pass as param into task
 static const char *FIRMWARE_UPGRADE_URL = "http://192.168.86.221:8070/hello-world.bin";
+
+
 
 esp_err_t _http_event_handler(esp_http_client_event_t *evt)
 {
@@ -58,8 +69,30 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
+uint64_t last_modified_header(esp_http_client_config_t *config) {
+    esp_http_client_handle_t client = esp_http_client_init(config);
+    esp_http_client_open(client, /* write_len= */ 0);
+    int header_len = esp_http_client_fetch_headers(client);
+    ESP_LOGI(TAG, "Status = %d, content_length = %d | %d",
+            esp_http_client_get_status_code(client),
+            esp_http_client_get_content_length(client),
+            header_len);
+
+    esp_http_client_close(client);
+
+    char buffer[100];
+    esp_http_client_get_header(client, "Last-Modified", (char**)&buffer);
+    ESP_LOGI(TAG, "Last-Modified: '%s'", buffer);
+
+    esp_http_client_cleanup(client);
+
+    return 0;
+}
+
 void simple_ota_example_task(void *pvParameter)
 {
+//    TaskHandle_t *patternTask = (TaskHandle_t *) pvParameter;
+
     while (1) {
         ESP_LOGI(TAG, "Starting OTA example");
 
@@ -73,22 +106,25 @@ void simple_ota_example_task(void *pvParameter)
         ESP_LOGI(TAG, "Bind interface name is %s", ifr.ifr_name);
 
         esp_http_client_config_t config = {
-            .url = FIRMWARE_UPGRADE_URL,
-    //        .cert_pem = (char *)server_cert_pem_start,
+//            .url = FIRMWARE_UPGRADE_URL,
+            .cert_pem = (char *)lets_encrypt_ca_pem_start,
             .event_handler = _http_event_handler,
             .keep_alive_enable = true,
             .if_name = &ifr,
         };
 
-        // Don't verify CN = ESP-DEV...
-        config.skip_cert_common_name_check = true;
+        last_modified_header(&config);
 
+        // TODO check for SHA somehow or something
+        // If found then vTaskSuspect(xHandle);
+/*
         esp_err_t ret = esp_https_ota(&config);
         if (ret == ESP_OK) {
             esp_restart();
         } else {
             ESP_LOGE(TAG, "Firmware upgrade failed");
         }
+        */
         // TODO: Make much large in reality
         vTaskDelay(10 * 1000 / portTICK_PERIOD_MS);
     }
@@ -121,7 +157,7 @@ static void get_sha256_of_partitions(void)
     print_sha256(sha_256, "SHA-256 for current firmware: ");
 }
 
-void setup_and_poll_ota(void)
+void setup_and_poll_ota(TaskHandle_t *patternTask)
 {
     // Initialize NVS.
     esp_err_t err = nvs_flash_init();
@@ -151,5 +187,5 @@ void setup_and_poll_ota(void)
      */
     esp_wifi_set_ps(WIFI_PS_NONE);
 
-    xTaskCreate(&simple_ota_example_task, "ota_example_task", 8192, NULL, 9, NULL);
+    xTaskCreate(&simple_ota_example_task, "ota_example_task", 8192, (void*) patternTask, 9, NULL);
 }

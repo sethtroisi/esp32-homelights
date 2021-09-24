@@ -2,13 +2,16 @@
  * OTA Helper - Adapted from simple_ota_example
 */
 
-#include "freertos/task.h"
+#pragma once
+
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void setup_and_poll_ota(TaskHandle_t *patternTask);
+static const char OTA_TASK_NAME[] = "ota_task";
+
+void setup_OTA_task(void);
 
 #ifdef __cplusplus
 }

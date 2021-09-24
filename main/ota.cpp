@@ -2,7 +2,7 @@
  * OTA Helper - Adapted from simple_ota_example
 */
 
-#include "ota.h"
+#include "ota.hpp"
 
 #include <stdio.h>
 #include <stdint.h>
@@ -20,6 +20,7 @@
 
 #include "nvs_flash.h"
 
+TaskHandle_t update_task;
 
 #define HASH_LEN 32
 static const char *bind_interface_name = "sta";
@@ -93,8 +94,20 @@ void simple_ota_example_task(void *pvParameter)
     TaskHandle_t selfTask = xTaskGetCurrentTaskHandle();
     xTaskNotifyGive(selfTask);
 
-    // TODO this doesn't work
     size_t current_partition_size = 0;
+
+
+    ESP_ERROR_CHECK(esp_netif_init());
+    /* This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
+     * More details in "Establishing Wi-Fi or Ethernet Connection" from examples/protocols/README.md
+     */
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    ESP_ERROR_CHECK(example_connect());
+
+    /* Ensure to disable any WiFi power save mode, this allows best throughput
+     * and hence timings for overall OTA operation.
+     */
+    esp_wifi_set_ps(WIFI_PS_NONE);
 
     esp_netif_t *netif = get_example_netif_from_desc(bind_interface_name);
     if (netif == NULL) {
@@ -115,10 +128,10 @@ void simple_ota_example_task(void *pvParameter)
         };
 
         for (int i = 0; i < 40; i++) {
-            vTaskDelay(25 / portTICK_PERIOD_MS);
-            gpio_set_level(2, 1);
-            vTaskDelay(25 / portTICK_PERIOD_MS);
-            gpio_set_level(2, 0);
+            vTaskDelay(pdMS_TO_TICKS(25));
+            gpio_set_level(GPIO_NUM_2, 1);
+            vTaskDelay(pdMS_TO_TICKS(25));
+            gpio_set_level(GPIO_NUM_2, 0);
         }
 
         size_t test = ota_binary_size(&config);
@@ -127,20 +140,19 @@ void simple_ota_example_task(void *pvParameter)
         ESP_LOGI(TAG, "OTA status, current: %d  new: %d\n",
                  current_partition_size, test);
 
-        {
-            ESP_LOGE(TAG, "Update taking semaphore");
-            // Wait for my task to have semaphore
-            ulTaskNotifyTake(/* clearOnExit= */ pdTRUE, portMAX_DELAY);
-            ESP_LOGE(TAG, "Update got semaphore (waiting 2s");
-            // TODO: Make much large in reality
-            vTaskDelay(2 * 1000 / portTICK_PERIOD_MS);
-            xTaskNotifyGive(selfTask);
-        }
-
-
+        // {
+        //     ESP_LOGE(TAG, "Update taking semaphore");
+        //     // Wait for my task to have semaphore
+        //     ulTaskNotifyTake(/* clearOnExit= */ pdTRUE, portMAX_DELAY);
+        //     ESP_LOGE(TAG, "Update got semaphore (waiting 5s)");
+        //     // TODO: Make much large in reality
+        //     vTaskDelay(pdMS_TO_TICKS(5000));
+        //     ESP_LOGE(TAG, "Update released");
+        //     xTaskNotifyGive(selfTask);
+        // }
 
         if (test != current_partition_size) {
-            gpio_set_level(2, 1);
+            gpio_set_level(GPIO_NUM_2, 1);
 
             // Wait for my task to have semaphore
             ulTaskNotifyTake(/* clearOnExit= */ pdTRUE, portMAX_DELAY);
@@ -157,7 +169,7 @@ void simple_ota_example_task(void *pvParameter)
         }
 
         // TODO: Make much large in reality
-        vTaskDelay(4 * 1000 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(4000));
     }
 }
 
@@ -204,19 +216,7 @@ void setup_OTA_task(void)
 
     //get_sha256_of_partitions();
 
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+//    ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    /* This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
-     * Read "Establishing Wi-Fi or Ethernet Connection" section in
-     * examples/protocols/README.md for more information about this function.
-     */
-    ESP_ERROR_CHECK(example_connect());
-
-    /* Ensure to disable any WiFi power save mode, this allows best throughput
-     * and hence timings for overall OTA operation.
-     */
-    esp_wifi_set_ps(WIFI_PS_NONE);
-
-    xTaskCreatePinnedToCore(&simple_ota_example_task, "ota_task", 8192, NULL, 9, NULL, 1);
+    xTaskCreatePinnedToCore(&simple_ota_example_task, "ota_task", 8192, NULL, 9, (TaskHandle_t*) &update_task, 1);
 }

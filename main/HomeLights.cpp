@@ -1,20 +1,17 @@
 /*
  * Project HomeLights
- * Description: Lights at home for S & A
+ * Description: Lights for Loops and Bloops
  * Author: Seth Troisi
  * Date: 2019-2021
  *
  * v0 Used neopixel.h
  * v1 Using FastLED
- *
- * Compile with
- * $ particle compile photon HomeLights/src/ libraries/FastLED/src/{*.h, *.cpp}
- * Compile and flash with
- * $ particle flash metis HomeLights/src/ libraries/FastLED/src/{*.h, *.cpp}
+ * v2 converted for ESP32
  *
  */
 
-#include "Particle.h"
+// TODO where is order does this belong
+#include "HomeLights.h"
 
 #include <cmath>
 #include <cassert>
@@ -26,10 +23,10 @@
 #include "FastLED.h"
 FASTLED_USING_NAMESPACE
 
-#include "DeviceNameHelperRK.h"
-int EEPROM_OFFSET_DEVICE_NAME = 100;
-
 #include "color_consts.h"
+#include "HomeLights.h"
+
+using std::string;
 
 //---------------------------------------------------------------------------||
 
@@ -42,8 +39,9 @@ int EEPROM_OFFSET_DEVICE_NAME = 100;
 
 //---------------------------------------------------------------------------||
 
-#define USE_SERIAL  0
-#define USE_PUBLISH 1
+#define USE_SERIAL  1
+
+static const char *TAG = "HomeLights";
 
 //---------------------------------------------------------------------------||
 
@@ -54,14 +52,16 @@ int EEPROM_OFFSET_DEVICE_NAME = 100;
 
 
 // Forward declarations
+void clearLonger();
 
+// TODO Can these be cleaned up in esp32?
 // No idea why these forward defs are needed
 // These prevent "CRGB Does not name a type"
-CRGB cm_Wheel(uint16_t WheelPos);
-CRGB cm_Pinks_v1(uint16_t WheelPos);
-CRGB cm_Pinks_v2(uint16_t WheelPos);
+//CRGB cm_Wheel(uint16_t WheelPos);
+//CRGB cm_Pinks_v1(uint16_t WheelPos);
+//CRGB cm_Pinks_v2(uint16_t WheelPos);
 // Prevents CRGB' was not declared in this scope
-void ripples_pattern(CRGB ripple_color, boolean wander_color);
+//void ripples_pattern(CRGB ripple_color, bool wander_color);
 
 
 CRGB ColorMap(uint16_t WheelPos);
@@ -72,72 +72,29 @@ void setSinglePixel(uint8_t strip_i, short pixel, CRGB color);
 void showStrips();
 
 
-float random_float() {
-    return static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+//--------------------------------------------------------------------------||
+
+
+void logString(string key) {
+#if USE_SERIAL
+    ESP_LOGI(TAG, "%s\n", key.c_str());
+#endif
 }
 
-uint8_t hashI( int p ) {
-    short h = p ^ (p >> 16);
-
-    // rng is 64x64 = 12bits
-    return rng[h & 255][(h >> 8) & 255];
+void logKeyValue(string key, string value) {
+#if USE_SERIAL
+    ESP_LOGI(TAG, "%s %s\n", key.c_str(), value.c_str());
+#endif
 }
 
-static float hash1d( float p ) {
-    // -1 to 1, consistent based on p
-    int px = reinterpret_cast<int&>(p);
-    float h = hashI(px);
-    return (h - 128) * 0.0078125; // = 1 / 128.0;
+void logValue(string key, float value) {
+#if USE_SERIAL
+    ESP_LOGI(TAG, "%s %f\n", key.c_str(), value);
+#endif
 }
 
-static float noise1d( float p ) {
-    // -1 to 1, consistent based on p
-    //  perlin noise / warp-ish
-    float i = floor( p );
-    float f = p - i;
+//--------------------------------------------------------------------------||
 
-    float u = f*f*(3.0f - 2.0f * f);
-
-    return mix( hash1d( i + 0.0f ),
-                hash1d( i + 1.0f ), u);
-}
-
-static float hash2d( vec2 p ) {
-    // -1 to 1, consistent based on p
-    int px = reinterpret_cast<int&>(p.x);
-    int py = reinterpret_cast<int&>(p.y);
-    float h = hashI(px ^ py) ^ hashI(px & py);
-    return (h - 128) * 0.0078125; // = 1 / 128.0;
-}
-
-static float noise2d( vec2 p ) {
-    // -1 to 1, consistent based on p
-    //  perlin noise / warp-ish
-    vec2 i = floor( p );
-    vec2 f = fract( p );
-
-    vec2 u = f*f*(3.0f - 2.0f * f);
-
-    return mix( mix( hash2d( i + vec2(0.0f ,0.0f) ),
-                     hash2d( i + vec2(1.0f ,0.0f) ), u.x),
-                mix( hash2d( i + vec2(0.0f ,1.0f) ),
-                     hash2d( i + vec2(1.0f ,1.0f) ), u.x), u.y);
-}
-
-// TODO see if this can be replaced by sin16_avr
-static float fast_sin(float x) {
-    //return sin(x);
-
-    // x = fmod(x, 2*M_PI) * 1024/(2*M_PI);
-    x = fmod(x, 6.2831853f) * 162.97466f;
-    int i = x;
-    float frac = x - i;
-
-    float sin_prev  = sin_lookup[max(0, i)];
-    float sin_next = sin_lookup[min(i+1, 1024)];
-
-    return mix(sin_prev, sin_next, frac);
-}
 
 float ripples1d( float k, float nth )
 {
@@ -192,7 +149,7 @@ float ripples2d( float nth )
 //    return 0.25f + 0.75f * foo;
 }
 
-void ripples_pattern(CRGB ripple_color, boolean wander_color)
+void ripples_pattern(CRGB ripple_color, bool wander_color)
 {
     // fade colors in and out with perlinish noise
     for (int strip_i = 0; strip_i < NUM_STRIPS; strip_i++) {
@@ -259,6 +216,9 @@ void PatternProcessor() {
                 color_a = ColorMap(120 * 256);
                 color_a_wheel_i = 120 * 256;
                 break;
+            default:
+                // No need to update color for none-listed patterns
+                ;
         }
     }
 
@@ -268,6 +228,9 @@ void PatternProcessor() {
         case FLAG_BI: case FLAG_PRIDE: case FLAG_TRANS:
             loop_delay = 100;
             break;
+        default:
+            ;
+            // No need to update color for none-listed patterns
     }
 
     // loop_delay has to be recalculated here so that speed changes are adjusted
@@ -457,21 +420,20 @@ void PatternProcessor() {
             }
 
         case WAVING_OMBRE:
-            {
-                global_i += 1;
-
-                // Move "forward" but wander a little bit
-                const float wander = 100 * noise2d( vec2( global_t * 0.091f, global_t * 0.047f ) );
-                const uint16_t wander_i = wander * (color_delta_mult >> 3);
-
-                color_a_wheel_i = wander_i + ((global_i * color_delta_mult) >> 4);
-                color_a = ColorMap(color_a_wheel_i);
-                // No return to fall into WAVING case
-            }
         case OMBRE_WAVING_OMBRE:
         case WAVING:
             {
                 global_i += 1;
+
+                if (current_pattern == WAVING_OMBRE) {
+                    // Move "forward" but wander a little bit
+                    const float wander = 100 * noise2d( vec2( global_t * 0.091f, global_t * 0.047f ) );
+                    const uint16_t wander_i = wander * (color_delta_mult >> 3);
+
+                    color_a_wheel_i = wander_i + ((global_i * color_delta_mult) >> 4);
+                    color_a = ColorMap(color_a_wheel_i);
+                }
+
                 ripples_pattern(color_a, current_pattern == OMBRE_WAVING_OMBRE);
 
                 loop_delay = 1; // global_s handled in ripples.
@@ -483,8 +445,8 @@ void PatternProcessor() {
             {
                 short start = random(NUM_LEDS);
                 short end   = random(NUM_LEDS);
-                short lower = min(start, end);
-                short upper = max(start, end);
+                short lower = std::min(start, end);
+                short upper = std::max(start, end);
                 short wrap  = random(10);
 
                 CRGB wipe = RAVE_MOOD[random(NUM_MOODS)];
@@ -512,8 +474,8 @@ void PatternProcessor() {
                 // Should be normal distribution I think
                 short size   = (random(10)) + 8;
 
-                short lower = max(middle - size/2, 0);
-                short upper = min(middle + size/2, NUM_LEDS-1);
+                short lower = std::max(middle - size/2, 0);
+                short upper = std::min(middle + size/2, NUM_LEDS-1);
                 CRGB wipe = RAVE_MOOD[random(NUM_MOODS)];
                 for (int i = lower; i <= upper; i++)  setPixel(i, wipe);
 
@@ -529,39 +491,48 @@ void PatternProcessor() {
                 loop_delay = 1;    // shorter to have higher FPS => better
                 return;
             }
+        case RESTART:
+            // Should be handled elsewhere
+            logString("GOT RESTART?");
     }
 }
 
 
-uint32_t HexProcessor(String cmd) {
+uint32_t HexProcessor(string cmd) {
     // NOTE: assumes that the 32 bit value is RRGGBB
     uint32_t color = 0;
-    for (int i = 1; i <= 6; i++) {
-        int val = 0;
-        char hex = cmd.charAt(i);
-        if (hex >= '0' && hex <= '9') {
-            val = hex - '0';
-        } else if (hex >= 'A' && hex <= 'F') {
-            val = (hex - 'A') + 10;
-        } else if (hex >= 'a' && hex <= 'f') {
-            val = (hex - 'a') + 10;
+    if (cmd.length() == 7) {
+        for (int i = 1; i <= 6; i++) {
+            int val = 0;
+            char hex = cmd[i];
+            if (hex >= '0' && hex <= '9') {
+                val = hex - '0';
+            } else if (hex >= 'A' && hex <= 'F') {
+                val = (hex - 'A') + 10;
+            } else if (hex >= 'a' && hex <= 'f') {
+                val = (hex - 'a') + 10;
+            }
+            color = (color << 4) + val;
         }
-        color = (color << 4) + val;
     }
     return color;
 }
 
+static
+bool startsWith(string word, string prefix) {
+    return word.size() >= prefix.size() && word.substr(0, prefix.size()) == prefix;
+}
 
-int ProcessCommand(String cmd) {
+int ProcessCommand(string cmd) {
     logString("Top: " + cmd);
     last_update_t = millis();
 
-    char first = cmd.length() > 0 ? cmd.charAt(0) : ' ';
+    char first = cmd.length() > 0 ? cmd[0] : ' ';
 
     // Helps synchronize effects
     // Ignore if pattern doesn't change
     if (!(first == '#' || first == '!' || cmd == "BALL" || (first == 'B' && cmd.length() == 2) ||
-        cmd.startsWith("CDELTA") || cmd.startsWith("SPEED") || cmd == "REVERSE" || cmd == "DEBUG"))
+        startsWith(cmd, "CDELTA") || startsWith(cmd, "SPEED") || cmd == "REVERSE" || cmd == "DEBUG"))
     {
         global_frames = 0;      // frame counter (reset by pattern change)
         global_i = 0;           // counter (may get reset, jump around)
@@ -585,7 +556,7 @@ int ProcessCommand(String cmd) {
         return 11;
 
     } else if (first == '!') {
-        int b = atol(cmd.substring(1));
+        int b = atol(cmd.substr(1).c_str());
         if (0 < b && b <= 255) {
             global_brightness = b;
             // Side affect is to set brightness
@@ -684,14 +655,14 @@ int ProcessCommand(String cmd) {
         current_pattern = LIGHTNING_RIPPLES;
         return 54;
 
-    } else if (cmd.startsWith("CDELTA")) {
-        int test = cmd.substring(6).toInt();
+    } else if (startsWith(cmd, "CDELTA")) {
+        int test = atol(cmd.substr(6).c_str());
         if (test > 0 && test <= 255)
             color_delta_mult = test * 64;
         return test;
 
-    } else if (cmd.startsWith("SPEED")) {
-        int test = cmd.substring(5).toInt();
+    } else if (startsWith(cmd, "SPEED")) {
+        int test = atol(cmd.substr(5).c_str());
         if (test > 0 && test <= 255)
             global_s = test;
         return test;
@@ -701,12 +672,12 @@ int ProcessCommand(String cmd) {
         clearLonger();
         return active_strips;
     } else if (cmd == "B1" || cmd == "B2" || cmd == "B3") {
-        active_strips ^= 1 << (cmd.charAt(1) - '1');
+        active_strips ^= 1 << (cmd[1] - '1');
         clearLonger();
         return active_strips;
 
-    } else if (cmd.startsWith("CMAP")) {
-        int test = cmd.substring(4).toInt();
+    } else if (startsWith(cmd, "CMAP")) {
+        int test = atol(cmd.substr(4).c_str());
         if (test >= 0 && test <= 10)
             global_cm = test;
         return test;
@@ -720,7 +691,8 @@ int ProcessCommand(String cmd) {
         return 110;
 
     } else if (cmd == "RESTART") {
-        System.reset();
+        // TODO how to restart ESP32?
+        // System.reset();
         return 404;
 
     } else {
@@ -804,8 +776,8 @@ void clearLonger() {
 CRGB cm_Wheel(uint16_t WheelPos) {
 
     // Maps WheelPos[0 -> 65536] -> [0, 3 * 255]
-    byte up = (((int) 3 * WheelPos) >> 8) & 255;
-    byte down = 255 - up;
+    uint8_t up = (((int) 3 * WheelPos) >> 8) & 255;
+    uint8_t down = 255 - up;
 
     // 21845 is last 255
     // 43690 is 2nd last
@@ -830,7 +802,7 @@ CRGB cm_Pinks_v1(uint16_t WheelPos) {
     }
 
     // Maps WheelPos[0 -> 65536] -> [0...255, 0...255]
-    byte up = (((int) 2 * WheelPos) >> 8) & 255;
+    uint8_t up = (((int) 2 * WheelPos) >> 8) & 255;
 
     if (WheelPos < 16384) {
         return CRGB(128 + up, 10, 255);
@@ -906,70 +878,46 @@ uint32_t guessWheel(CRGB guess) {
 //--------------------------------------------------------------------------||
 
 
-void setup() {
-#if USE_SERIAL
-        Serial.begin(9600);
-#elif USE_PUBLISH
-        Particle.function("setColor", ProcessCommand);
-
-        ::RGB.control(true);
-        ::RGB.color(0, 0, 0); // Avoid the pulsing blue.
-#endif
-
+void hl_setup() {
+    /* TODO find an ESP32 replacement
     DeviceNameHelperEEPROM::instance().setup(EEPROM_OFFSET_DEVICE_NAME);
     for (int i = 0; i < 50 && !DeviceNameHelperEEPROM::instance().hasName(); i++) {
         DeviceNameHelperEEPROM::instance().loop();
         delay(1000);
     }
 
-    String name = DeviceNameHelperEEPROM::instance().getName();
+    string name = DeviceNameHelperEEPROM::instance().getName();
+    */
 
     /**
-     * Note these are maybe written out in parallel at some speedup?
-     * Using a very light pattern I saw
-     * 1x70 => 500 fps = 2ms
-     * 2x70 => 333 fps = 3ms
-     * 3x70 => 249 fps = 4ms
-     */
-
-    /**
-     * v0 PCB layout is
+     * v0 PCB layout was
      * [ D5 ] [ D4 ]
      * [ D3 ] [ D2 ]
      * [ A2 ] [ A3 ]
      * [ A0 ] [ A1 ]
+     * 
+     * v1 PCB layout is 
+     * pins: D12, D12, D14, D27, D26, D25, D33, D32
+     * strips: ? ? ?, ? ? ?, ? ? X
      */
 
     /**
      * Note FastLED wants to know pins at compile time and array access
-     * seems not to be const expr. So I have to have this.
+     * seems not to be const expr. So I have to do this.
      */
 
-    NUM_STRIPS = 3;
-    NUM_LEDS = 70;
-    if (name == "metis") {
-        FastLED.addLeds<STRAND_TYPE, A0, COLOR_ORDER>(leds, 0, NUM_LEDS);
-        FastLED.addLeds<STRAND_TYPE, A3, COLOR_ORDER>(leds, NUM_LEDS, NUM_LEDS);
-        FastLED.addLeds<STRAND_TYPE, A1, COLOR_ORDER>(leds, 2 * NUM_LEDS, NUM_LEDS);
-    } else if (name == "terra") {
-        NUM_LEDS = 150;
-        FastLED.addLeds<STRAND_TYPE, D5, COLOR_ORDER>(leds, 0, NUM_LEDS);
-        FastLED.addLeds<STRAND_TYPE, D4, COLOR_ORDER>(leds, NUM_LEDS, NUM_LEDS);
-        FastLED.addLeds<STRAND_TYPE, D2, COLOR_ORDER>(leds, 2 * NUM_LEDS, NUM_LEDS);
-    } else if (name == "callisto") { // Got FRIED by 12 volts
-        FastLED.addLeds<STRAND_TYPE, A3, COLOR_ORDER>(leds, 0, NUM_LEDS);
-        FastLED.addLeds<STRAND_TYPE, A2, COLOR_ORDER>(leds, NUM_LEDS, NUM_LEDS);
-        FastLED.addLeds<STRAND_TYPE, A0, COLOR_ORDER>(leds, 2*NUM_LEDS, NUM_LEDS);
-    } else {
-        while (true) {
-            logString("Bad device name: " + name);
-            delay(300 * 1000);
-        }
-    }
+    FastLED.addLeds<STRAND_TYPE, DATA_PIN_1, COLOR_ORDER>(leds, NUM_LEDS);
+    if (NUM_STRIPS >= 2) FastLED.addLeds<STRAND_TYPE, DATA_PIN_2, COLOR_ORDER>(leds, 1*NUM_LEDS, 2*NUM_LEDS);
+    if (NUM_STRIPS >= 3) FastLED.addLeds<STRAND_TYPE, DATA_PIN_3, COLOR_ORDER>(leds, 2*NUM_LEDS, 3*NUM_LEDS);
+    if (NUM_STRIPS >= 4) FastLED.addLeds<STRAND_TYPE, DATA_PIN_4, COLOR_ORDER>(leds, 3*NUM_LEDS, 4*NUM_LEDS);
+    if (NUM_STRIPS >= 5) FastLED.addLeds<STRAND_TYPE, DATA_PIN_5, COLOR_ORDER>(leds, 4*NUM_LEDS, 5*NUM_LEDS);
+    if (NUM_STRIPS >= 6) FastLED.addLeds<STRAND_TYPE, DATA_PIN_6, COLOR_ORDER>(leds, 5*NUM_LEDS, 6*NUM_LEDS);
+    if (NUM_STRIPS >= 7) FastLED.addLeds<STRAND_TYPE, DATA_PIN_7, COLOR_ORDER>(leds, 6*NUM_LEDS, 7*NUM_LEDS);
+    if (NUM_STRIPS >= 8) FastLED.addLeds<STRAND_TYPE, DATA_PIN_8, COLOR_ORDER>(leds, 7*NUM_LEDS, 8*NUM_LEDS);
 
     FastLED.setCorrection(TypicalLEDStrip);
     FastLED.setDither(DEFAULT_BRIGHTNESS < 255);
-    FastLED.setMaxPowerInMilliWatts(5 * 3 * 5000);
+    FastLED.setMaxPowerInVoltsAndMilliamps(5, 1500);
 
     // wait a tiny bit to clear.
     delay(10);
@@ -979,7 +927,7 @@ void setup() {
     ProcessCommand(DEFAULT);
 }
 
-void loop() {
+void hl_loop() {
     const float INVERSE_MICROS = 1e-6;
 
     // interupts are disabled during FastLed.show() so we have to guess at timing
@@ -1007,7 +955,7 @@ void loop() {
 
     int32_t delta_usec = (micros_after - micros_now) + write_usec_guess;
 
-    int32_t sleep_usec = max(0, max(1, loop_delay) * 1000 - delta_usec);
+    int32_t sleep_usec = std::max(0, std::max(1, loop_delay) * 1000 - delta_usec);
 
     if (is_fps_debug) {
         // TODO look at FastLED::getFPS()
@@ -1023,34 +971,5 @@ void loop() {
     }
 }
 
-
-//--------------------------------------------------------------------------||
-
-
-void logString(String key) {
-#if USE_SERIAL
-    Serial.println(key);
-#elif USE_PUBLISH
-    Particle.publish(key, PRIVATE);
-    delay(50);
-#endif
-}
-
-void logKeyValue(String key, String value) {
-#if USE_SERIAL
-    Serial.print(key);
-    Serial.println(value);
-#elif USE_PUBLISH
-    Particle.publish(key, value, PRIVATE);
-    delay(50);
-#endif
-}
-
-void logValue(String key, float value) {
-    char body[30] = {};
-    snprintf(body, 30, "%f", value);
-
-    logKeyValue(key, body);
-}
 
 //--------------------------------------------------------------------------||

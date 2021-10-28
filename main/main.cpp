@@ -15,26 +15,37 @@
 #include "esp_system.h"
 #include "esp_spi_flash.h"
 #include "esp_task_wdt.h"
+#include "rom/ets_sys.h"
 
 #include "FastLED.h"
 
-#include "ota.hpp"
+//#include "ota.hpp"
+
+#include "HomeLights.h"
 
 static const char *TAG = "LIGHTS";
 
 // To change build size
-static const char *OTA_FORCE = "" "extra even longer very long string why did I do this to myself";
+// static const char *OTA_FORCE = ""; //"test OTA string";
 
-#define NUM_STRIPS 1
+#define NUM_STRIPS 8
 
-#define DATA_PIN_1 26
-#define DATA_PIN_2 25
-#define DATA_PIN_3 33
-#define DATA_PIN_4 32
+// SN74HCT245 OUTPUT_ENABLE, active_low
+#define ENABLE_PIN GPIO_NUM_15
 
-#define NUM_LEDS    150
+#define DATA_PIN_1 12
+#define DATA_PIN_2 13
+#define DATA_PIN_3 14
+#define DATA_PIN_4 25
+#define DATA_PIN_5 26
+#define DATA_PIN_6 27
+#define DATA_PIN_7 33
+#define DATA_PIN_8 32
+
+
+#define NUM_LEDS    50
 #define BRIGHTNESS  64
-#define LED_TYPE    WS2812B
+#define STRAND_TYPE    WS2812B
 #define COLOR_ORDER GRB
 
 CRGB leds[NUM_STRIPS][NUM_LEDS];
@@ -42,13 +53,11 @@ CRGB leds[NUM_STRIPS][NUM_LEDS];
 #define LIGHTS_CORE 0
 
 void FASTLED_safe_show() {
-  // Setting this < ~10ms means this pattern_test is a busy loop
-  // That requires disabling Watch CPU1 (LIGHTS_CORE) Idle Task
-  // menuconfig -> Component config -> ESP System Settings
-
-  // Could be as low as 50us, needed to not clobber next show
-  vTaskDelay(pdMS_TO_TICKS(10));
   FastLED.show();
+
+  // In theory could be as low as 50us, needed to not clobber next show
+  // In practice 300us seems to work nicely
+  ets_delay_us(300);
 }
 
 /**
@@ -66,6 +75,27 @@ void clear_long() {
 
     FastLED.clear();
     FASTLED_safe_show();
+}
+
+// Input a value 0 to 65,535 to get a color value.
+// The colours are a transition r -> g -> b -> back to r.
+CRGB cm_Wheel(uint16_t WheelPos) {
+
+    // Maps WheelPos[0 -> 65536] -> [0, 3 * 255]
+    uint8_t up = (((int) 3 * WheelPos) >> 8) & 255;
+    uint8_t down = 255 - up;
+
+    // 21845 is last 255
+    // 43690 is 2nd last
+
+    if (WheelPos <= 21845) {
+        return CRGB(down, 0, up);
+    }
+    if (WheelPos <= 43690) {
+        return CRGB(0, up, down);
+    }
+    return CRGB(up, down, 0);
+
 }
 
 void pattern_test(void) {
@@ -90,6 +120,8 @@ void pattern_test(void) {
     ESP_LOGI(TAG, "Starting pattern_test() loop\n");
     //clear_long();
 
+    //int frame = 0;
+
     // Run down and back
     while (1) {
       // Take semaphore (this is ugly because we can't take from another task)
@@ -107,19 +139,43 @@ void pattern_test(void) {
       ESP_LOGI(TAG, "Run");
 
       for (int i = 0; i < NUM_STRIPS; i++) {
-        ESP_LOGI(TAG, "#1 %d", i);
+        ESP_LOGI(TAG, "Strip %d", i);
+        for (int j = 0; j <= i; j++) {
+          gpio_set_level(GPIO_NUM_2, HIGH);
+          vTaskDelay(pdMS_TO_TICKS(100));
+          gpio_set_level(GPIO_NUM_2, LOW);
+          vTaskDelay(pdMS_TO_TICKS(100));
+        }
+
         for (int j = 0; j < 2*NUM_LEDS; j++) {
-          if (j % 4 == 0) {
-            ESP_LOGI(TAG, " #1 %d-%d", i, j);
-            vTaskDelay(pdMS_TO_TICKS(10));
-          }
           FastLED.clear();
           int k = j < NUM_LEDS ? j : (2*NUM_LEDS - j - 1);
           assert( (0 <= k) && (NUM_LEDS - 1) );
-          leds[i][k] = colors[i];
+          leds[i][k] = cm_Wheel(i + j);
           FASTLED_safe_show();
         }
+
+        FastLED.clear();
+        FASTLED_safe_show();
+        vTaskDelay(pdMS_TO_TICKS(500));
       }
+
+/*
+      for (int z = 0; z < 16 * 256; z++) {
+        frame += 40;
+        FastLED.clear();
+        for (int i = 0; i < NUM_STRIPS; i++) {
+          for (int j = 0; j < NUM_LEDS; j++) {
+            leds[i][j] = cm_Wheel(frame + 100 * j);
+          }
+        }
+        if (z % 256 == 0)
+          vTaskDelay(pdMS_TO_TICKS(2000));
+
+        FASTLED_safe_show();
+      }
+*/
+
       FastLED.clear();
       FASTLED_safe_show();
 
@@ -153,15 +209,28 @@ void pattern_test(void) {
 void run_lights(void *pvParameters) {
   ESP_LOGI(TAG, "Calling addLeds<>()\n");
 
-  FastLED.addLeds<LED_TYPE, DATA_PIN_1, COLOR_ORDER>(leds[0], NUM_LEDS);
-  if (NUM_STRIPS >= 2) FastLED.addLeds<LED_TYPE, DATA_PIN_2, COLOR_ORDER>(leds[1], NUM_LEDS);
-  if (NUM_STRIPS >= 3) FastLED.addLeds<LED_TYPE, DATA_PIN_3, COLOR_ORDER>(leds[2], NUM_LEDS);
-  if (NUM_STRIPS >= 4) FastLED.addLeds<LED_TYPE, DATA_PIN_4, COLOR_ORDER>(leds[3], NUM_LEDS);
+  FastLED.addLeds<STRAND_TYPE, DATA_PIN_1, COLOR_ORDER>(leds[0], NUM_LEDS);
+  if (NUM_STRIPS >= 2) FastLED.addLeds<STRAND_TYPE, DATA_PIN_2, COLOR_ORDER>(leds[1], NUM_LEDS);
+  if (NUM_STRIPS >= 3) FastLED.addLeds<STRAND_TYPE, DATA_PIN_3, COLOR_ORDER>(leds[2], NUM_LEDS);
+  if (NUM_STRIPS >= 4) FastLED.addLeds<STRAND_TYPE, DATA_PIN_4, COLOR_ORDER>(leds[3], NUM_LEDS);
+  if (NUM_STRIPS >= 5) FastLED.addLeds<STRAND_TYPE, DATA_PIN_5, COLOR_ORDER>(leds[4], NUM_LEDS);
+  if (NUM_STRIPS >= 6) FastLED.addLeds<STRAND_TYPE, DATA_PIN_6, COLOR_ORDER>(leds[5], NUM_LEDS);
+  if (NUM_STRIPS >= 7) FastLED.addLeds<STRAND_TYPE, DATA_PIN_7, COLOR_ORDER>(leds[6], NUM_LEDS);
+  if (NUM_STRIPS >= 8) FastLED.addLeds<STRAND_TYPE, DATA_PIN_8, COLOR_ORDER>(leds[7], NUM_LEDS);
 
   ESP_LOGI(TAG, "Limitting MAX power\n");
-  FastLED.setMaxPowerInVoltsAndMilliamps(5, 2000);
+  FastLED.setBrightness(BRIGHTNESS);
+  FastLED.setMaxPowerInVoltsAndMilliamps(5, 1500);
+
+  // Enable SN74HCT255 at this point
+  gpio_set_level(ENABLE_PIN, LOW);
 
   pattern_test();
+}
+
+void home_lights_run(void *pvParameters) {
+  hl_setup();
+  hl_loop();
 }
 
 
@@ -170,15 +239,23 @@ extern "C" {
 }
 
 void app_main() {
+  gpio_reset_pin(ENABLE_PIN);
+  gpio_set_direction(ENABLE_PIN, GPIO_MODE_OUTPUT);
+  gpio_set_pull_mode(ENABLE_PIN, GPIO_FLOATING);
+
+
   gpio_set_direction(GPIO_NUM_2, GPIO_MODE_OUTPUT);
   gpio_set_level(GPIO_NUM_2, LOW);
 
-  ESP_LOGI(TAG, "Trying to establish OTA capability (%s)\n", OTA_FORCE);
-
+  //ESP_LOGI(TAG, "Trying to establish OTA capability (%s)\n", OTA_FORCE);
   //setup_OTA_task();
+
   vTaskDelay(pdMS_TO_TICKS(1000));
 
-  // change the task below to one of the functions above to try different patterns
-  ESP_LOGI(TAG, "Creating task for run_lights()\n");
-  xTaskCreatePinnedToCore(&run_lights, "blinkLeds", 4000, (void*) NULL, 5, NULL, LIGHTS_CORE);
+ // ESP_LOGI(TAG, "Creating task for run_lights()\n");
+ // xTaskCreate(&run_lights, "blinkLeds", 4000, (void*) NULL, 5, NULL);
+
+  ESP_LOGI(TAG, "Creating task for home_lights()\n");
+  xTaskCreate(&home_lights_run, "home lights", 4000, (void*) NULL, 5, NULL);
+
 }

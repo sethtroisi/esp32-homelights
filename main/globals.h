@@ -9,8 +9,9 @@ FASTLED_USING_NAMESPACE
 #define STRAND_TYPE WS2812B
 #define COLOR_ORDER GRB
 
-#define MAX_NUM_STRIPS 3
-#define MAX_NUM_LEDS 70 // 150
+#define MAX_NUM_STRIPS 8
+#define MAX_NUM_LEDS 70
+// 150
 CRGB leds[MAX_NUM_STRIPS * MAX_NUM_LEDS];
 
 int NUM_LEDS = MAX_NUM_LEDS;
@@ -22,17 +23,17 @@ int NUM_STRIPS = MAX_NUM_STRIPS;
 #define DATA_PIN_4 25
 #define DATA_PIN_5 26
 #define DATA_PIN_6 27
-#define DATA_PIN_7 33
-#define DATA_PIN_8 32
+#define DATA_PIN_7 32
+#define DATA_PIN_8 33
 
 
 // MAX is 255
-#define DEFAULT_BRIGHTNESS  128
+#define DEFAULT_BRIGHTNESS  64
 
 //---------------------------------------------------------------------------||
 //--------------------------------- Patterns --------------------------------//
 
-#define DEFAULT "TWINKLE"
+#define DEFAULT_PATTERN "TWINKLE"
 
 // Add here and twice in HomeLights.ino
 enum Pattern {

@@ -749,13 +749,24 @@ void setSinglePixel(uint8_t strip_i, short pixel, CRGB color) {
     }
 }
 
+void FASTLED_safe_show() {
+    FastLED.show();
+
+    // In theory could be as low as 50us, needed to not clobber next show
+    // In practice 300us seems to work nicely
+    ets_delay_us(300);
+}
+
+
 void showStrips() {
     if (active_strips == (1UL << NUM_STRIPS) - 1UL) {
-        FastLED.show();
+        FASTLED_safe_show();
     } else {
+        // TODO this isn't parallel can I just write black to the other strips?
         for (int strip_i = 0; strip_i < NUM_STRIPS; strip_i++)
             if ((active_strips & (1 << strip_i)))
                 FastLED[strip_i].showLeds(global_brightness);
+        ets_delay_us(300);
     }
 }
 
@@ -766,8 +777,7 @@ void clearLonger() {
 
     FastLED.setBrightness(global_brightness);
     FastLED.clear();
-    FastLED.show();
-    delay(2); // Needed so as not to keep writing past end of NUM_LEDS if called quickly again.
+    FASTLED_safe_show();
 }
 
 
@@ -907,24 +917,26 @@ void hl_setup() {
      */
 
     FastLED.addLeds<STRAND_TYPE, DATA_PIN_1, COLOR_ORDER>(leds, NUM_LEDS);
-    if (NUM_STRIPS >= 2) FastLED.addLeds<STRAND_TYPE, DATA_PIN_2, COLOR_ORDER>(leds, 1*NUM_LEDS, 2*NUM_LEDS);
-    if (NUM_STRIPS >= 3) FastLED.addLeds<STRAND_TYPE, DATA_PIN_3, COLOR_ORDER>(leds, 2*NUM_LEDS, 3*NUM_LEDS);
-    if (NUM_STRIPS >= 4) FastLED.addLeds<STRAND_TYPE, DATA_PIN_4, COLOR_ORDER>(leds, 3*NUM_LEDS, 4*NUM_LEDS);
-    if (NUM_STRIPS >= 5) FastLED.addLeds<STRAND_TYPE, DATA_PIN_5, COLOR_ORDER>(leds, 4*NUM_LEDS, 5*NUM_LEDS);
-    if (NUM_STRIPS >= 6) FastLED.addLeds<STRAND_TYPE, DATA_PIN_6, COLOR_ORDER>(leds, 5*NUM_LEDS, 6*NUM_LEDS);
-    if (NUM_STRIPS >= 7) FastLED.addLeds<STRAND_TYPE, DATA_PIN_7, COLOR_ORDER>(leds, 6*NUM_LEDS, 7*NUM_LEDS);
-    if (NUM_STRIPS >= 8) FastLED.addLeds<STRAND_TYPE, DATA_PIN_8, COLOR_ORDER>(leds, 7*NUM_LEDS, 8*NUM_LEDS);
+    if (NUM_STRIPS >= 2) FastLED.addLeds<STRAND_TYPE, DATA_PIN_2, COLOR_ORDER>(leds, 1*NUM_LEDS, NUM_LEDS);
+    if (NUM_STRIPS >= 3) FastLED.addLeds<STRAND_TYPE, DATA_PIN_3, COLOR_ORDER>(leds, 2*NUM_LEDS, NUM_LEDS);
+    if (NUM_STRIPS >= 4) FastLED.addLeds<STRAND_TYPE, DATA_PIN_4, COLOR_ORDER>(leds, 3*NUM_LEDS, NUM_LEDS);
+    if (NUM_STRIPS >= 5) FastLED.addLeds<STRAND_TYPE, DATA_PIN_5, COLOR_ORDER>(leds, 4*NUM_LEDS, NUM_LEDS);
+    if (NUM_STRIPS >= 6) FastLED.addLeds<STRAND_TYPE, DATA_PIN_6, COLOR_ORDER>(leds, 5*NUM_LEDS, NUM_LEDS);
+    if (NUM_STRIPS >= 7) FastLED.addLeds<STRAND_TYPE, DATA_PIN_7, COLOR_ORDER>(leds, 6*NUM_LEDS, NUM_LEDS);
+    if (NUM_STRIPS >= 8) FastLED.addLeds<STRAND_TYPE, DATA_PIN_8, COLOR_ORDER>(leds, 7*NUM_LEDS, NUM_LEDS);
 
     FastLED.setCorrection(TypicalLEDStrip);
+    FastLED.setBrightness(DEFAULT_BRIGHTNESS);
     FastLED.setDither(DEFAULT_BRIGHTNESS < 255);
     FastLED.setMaxPowerInVoltsAndMilliamps(5, 1500);
 
     // wait a tiny bit to clear.
     delay(10);
     clearLonger();
+    delay(10);
 
     // Default pattern to run.
-    ProcessCommand(DEFAULT);
+    ProcessCommand(DEFAULT_PATTERN);
 }
 
 void hl_loop() {
@@ -936,6 +948,10 @@ void hl_loop() {
     micros_last = micros_now;
     micros_now = micros(); // 32 bit => overflows every hour!
 
+    if (global_frames % 100 == 0) {
+        ESP_LOGI(TAG, "%d | %llu => %d\n", global_frames, micros_now, current_pattern);
+    }
+
     global_t = micros_now * INVERSE_MICROS;
     global_tDelta = (micros_now - micros_last + write_usec_guess) * INVERSE_MICROS;
     if (global_tDelta < 0) global_tDelta = INVERSE_MICROS;
@@ -944,7 +960,7 @@ void hl_loop() {
         PatternProcessor();
 
         // FastLED disables interupts so micros & millis doesn't work.
-        showStrips();
+        FASTLED_safe_show();
     }
 
     uint64_t micros_after = micros();
@@ -963,7 +979,7 @@ void hl_loop() {
         show_value(fps);
 
         // This means fps measures pattern + 2 shows
-        FastLED.show();
+        FASTLED_safe_show();
     } else {
         // Note: documentation says not to set long waits with delayMicroseconds
         delayMicroseconds(sleep_usec % 1000);

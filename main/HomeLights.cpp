@@ -24,7 +24,6 @@
 FASTLED_USING_NAMESPACE
 
 #include "color_consts.h"
-#include "HomeLights.h"
 
 using std::string;
 

@@ -18,12 +18,13 @@
 #include <esp_system.h>
 
 #include "HomeLights.h"
-//#include "Networking.h"
+#include "Networking.h"
+
 
 static const char *TAG = "LIGHTS";
 
 // SN74HCT245 OUTPUT_ENABLE, active_low
-#define ENABLE_PIN GPIO_NUM_15
+#define LIGHTS_DISABLE_PIN GPIO_NUM_15
 
 void home_lights_run(void *pvParameters) {
   hl_setup();
@@ -38,7 +39,7 @@ void home_lights_run(void *pvParameters) {
 }
 
 void recieve_commands(void *pvParameters) {
-//  networking_main();
+  networking_main();
 
   // After network server is setup, delete this task
   vTaskDelete(NULL);
@@ -55,10 +56,18 @@ void app_main() {
   gpio_set_direction(GPIO_NUM_2, GPIO_MODE_OUTPUT);
   gpio_set_level(GPIO_NUM_2, 0);
 
-  gpio_reset_pin(ENABLE_PIN);
-  gpio_set_direction(ENABLE_PIN, GPIO_MODE_OUTPUT);
-  gpio_set_pull_mode(ENABLE_PIN, GPIO_FLOATING);
-  gpio_set_level(ENABLE_PIN, 0);
+  {
+    bool disable_lights = 0;
+    gpio_reset_pin(LIGHTS_DISABLE_PIN);
+    gpio_set_direction(LIGHTS_DISABLE_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_pull_mode(LIGHTS_DISABLE_PIN, GPIO_FLOATING);
+#define LIGHTS_DISABLE_PIN GPIO_NUM_15
+    gpio_set_level(LIGHTS_DISABLE_PIN, disable_lights);
+    if (disable_lights) {
+      ESP_LOGI(TAG, "LIGHTS DISABLED AT 3->5 volt converter\n");
+      vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+  }
 
   // TODO flash a ACK pattern
 
@@ -71,8 +80,8 @@ void app_main() {
    *  Tasks can, however, delete themselves."
    */
 
-//  ESP_LOGI(TAG, "Creating task for receiving commands()\n");
-//  xTaskCreate(&recieve_commands, "Recieve Commands", /*usStackDepth=*/ 4000, (void*) NULL, /*uxPriority=*/ 5, NULL);
+  ESP_LOGI(TAG, "Creating task for receiving commands()\n");
+  xTaskCreate(&recieve_commands, "Recieve Commands", /*usStackDepth=*/ 4000, (void*) NULL, /*uxPriority=*/ 5, NULL);
 
   vTaskDelay(1000 / portTICK_PERIOD_MS);
   ESP_LOGI(TAG, "Creating task for home_lights()\n");

@@ -10,18 +10,18 @@ FASTLED_USING_NAMESPACE
 #define STRAND_TYPE WS2812B
 #define COLOR_ORDER GRB
 
-#define MAX_NUM_STRIPS 8
-#define MAX_NUM_LEDS 70
+#define MAX_NUM_STRIPS 1
+#define MAX_NUM_LEDS 100
 // 150
 CRGB leds[MAX_NUM_STRIPS * MAX_NUM_LEDS];
 
 int NUM_LEDS = MAX_NUM_LEDS;
 int NUM_STRIPS = MAX_NUM_STRIPS;
 
-#define DATA_PIN_1 12
+#define DATA_PIN_1 25
 #define DATA_PIN_2 13
 #define DATA_PIN_3 14
-#define DATA_PIN_4 25
+#define DATA_PIN_4 12
 #define DATA_PIN_5 26
 #define DATA_PIN_6 27
 #define DATA_PIN_7 32
@@ -125,7 +125,7 @@ const int NUM_MOODS = sizeof(RAVE_MOOD) / sizeof(RAVE_MOOD[0]);
 const int MAX_TWINKLE = 100;
 // Twinkles per seconds (all trips)
 #define TWINKLE_RATE    36.1
-#define TWINKLE_FADE    2
+#define TWINKLE_FADE    1
 
 
 const int MAX_METEORS = 10;
@@ -149,7 +149,9 @@ const uint64_t SNAKE_WIDTH = 40;
 //------------------------------- Global State ------------------------------//
 
 int global_brightness = DEFAULT_BRIGHTNESS;
-uint32_t active_strips = (1 << MAX_NUM_STRIPS) - 1; // bits for blade 1, 2, 3
+
+uint32_t ALL_STRIPS = (1 << MAX_NUM_STRIPS) - 1;
+uint32_t active_strips = ALL_STRIPS; // bits for blade 1, 2, 3
 
 uint8_t is_reversed = false;
 uint8_t is_fps_debug = false;
@@ -220,4 +222,4 @@ struct lighting {
 
 
 
-CRGB snake_colors[MAX_NUM_STRIPS] = {CRGB::Red, CRGB::Green, CRGB::BlueViolet};
+CRGB snake_colors[MAX_NUM_STRIPS] = {CRGB::Red};

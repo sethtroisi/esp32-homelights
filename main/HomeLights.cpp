@@ -175,13 +175,21 @@ void ripples_pattern(CRGB ripple_color, bool wander_color)
 
 
 uint32_t guess_show_timing_usec() {
-    size_t num_active_strips = ((active_strips & 1) == 1) + ((active_strips & 2) == 2) + ((active_strips & 4) == 4);
-    size_t leds = num_active_strips * NUM_LEDS;
+    if (0) {
+        // linear case
+        size_t num_active_strips = 0;
+        for (int  i = 0; i < NUM_STRIPS; i++)
+            num_active_strips += (active_strips >> i) & 1;
 
-    // Both a 1 and 0 take 1.25us (from .85 high + .40 low OR .45 high + .8 low)
-    // 1.25us * 24 bits = 30us / led
+        size_t leds = num_active_strips * NUM_LEDS;
 
-    return 30 * leds;
+        // Both a 1 and 0 take 1.25us (from .85 high + .40 low OR .45 high + .8 low)
+        // 1.25us * 24 bits = 30us / led
+
+        return 30 * leds;
+    } else {
+        return 30 * NUM_LEDS;
+    }
 }
 
 //--------------------------------------------------------------------------||
@@ -193,7 +201,7 @@ void PatternProcessor() {
     if (millis() - last_update_t > (2 * 3600 * 1000)) {
         // After 2 hours change to BLACK;
         current_pattern = NONE;
-        active_strips = (1 + 2 + 4);
+        active_strips = ALL_STRIPS;
         global_brightness = DEFAULT_BRIGHTNESS;
         clearLonger();
         last_update_t = millis();
@@ -321,7 +329,6 @@ void PatternProcessor() {
 
             loop_delay = 10;
             return;
-
 
         case SOLID:
             setStrip(color_a);
@@ -667,7 +674,7 @@ int ProcessCommand(string cmd) {
         return test;
 
     } else if (cmd == "BALL") {
-        active_strips = (1 + 2 + 4);
+        active_strips = ALL_STRIPS;
         clearLonger();
         return active_strips;
     } else if (cmd == "B1" || cmd == "B2" || cmd == "B3") {
@@ -749,34 +756,43 @@ void setSinglePixel(uint8_t strip_i, short pixel, CRGB color) {
 }
 
 void FASTLED_safe_show() {
-    FastLED.show();
-
     // In theory could be as low as 50us, needed to not clobber next show
     // In practice 300us seems to work nicely
+    ets_delay_us(300);
+
+    FastLED.show();
+
+    // Be double safe
     ets_delay_us(300);
 }
 
 
 void showStrips() {
-    if (active_strips == (1UL << NUM_STRIPS) - 1UL) {
+    if (active_strips == ALL_STRIPS) {
         FASTLED_safe_show();
     } else {
         // TODO this isn't parallel can I just write black to the other strips?
-        for (int strip_i = 0; strip_i < NUM_STRIPS; strip_i++)
-            if ((active_strips & (1 << strip_i)))
+        for (int strip_i = 0; strip_i < NUM_STRIPS; strip_i++) {
+            if ((active_strips & (1 << strip_i))) {
+                ets_delay_us(300);
                 FastLED[strip_i].showLeds(global_brightness);
-        ets_delay_us(300);
+            }
+        }
     }
 }
 
 void clearLonger() {
+    ets_delay_us(1000);
+
     for(auto c = CLEDController::head(); c != nullptr; c = c->next()) {
         c->clearLeds(300);
+        // Make sure to not clobber next show
+        ets_delay_us(1000);
     }
 
     FastLED.setBrightness(global_brightness);
     FastLED.clear();
-    FASTLED_safe_show();
+    ets_delay_us(1000);
 }
 
 
@@ -906,8 +922,9 @@ void hl_setup() {
      * [ A0 ] [ A1 ]
      * 
      * v1 PCB layout is 
-     * pins: D12, D12, D14, D27, D26, D25, D33, D32
-     * strips: ? ? ?, ? ? ?, ? ? X
+     * pins: D13, D12, D14, D27, D26, D25, D33, D32
+     * strp: [8   7]  [6    5    4]  [3    2    1]
+     * strips: 8 ? ? ? ? ?, ? ? X
      */
 
     /**
@@ -947,18 +964,9 @@ void hl_loop() {
     micros_last = micros_now;
     micros_now = micros(); // 32 bit => overflows every hour!
 
-    if (global_frames % 100 == 0) {
-        ESP_LOGI(TAG, "%d | %llu => %d\n", global_frames, micros_now, current_pattern);
-    }
-
-    global_t = micros_now * INVERSE_MICROS;
-    global_tDelta = (micros_now - micros_last + write_usec_guess) * INVERSE_MICROS;
     if (global_tDelta < 0) global_tDelta = INVERSE_MICROS;
-
     {
         PatternProcessor();
-
-        // FastLED disables interupts so micros & millis doesn't work.
         FASTLED_safe_show();
     }
 
@@ -967,8 +975,22 @@ void hl_loop() {
         micros_after += (1LL << 32);
     }
 
+    int32_t delta_usec = (micros_after - micros_now);
+    if (delta_usec < write_usec_guess) {
+        // FastLED disables interupts so micros & millis doesn't work.
+        delta_usec += write_usec_guess;
+    }
 
-    int32_t delta_usec = (micros_after - micros_now) + write_usec_guess;
+    global_t = micros_now * INVERSE_MICROS;
+    // Broken if interupts are disabled and micros isn't updated
+    global_tDelta = (micros_now - micros_last) * INVERSE_MICROS;
+
+
+    if (global_frames % 100 == 0) {
+        ESP_LOGI(TAG, "%d | %llu => %d (%llu)\n", global_frames, micros_now, current_pattern, micros_after - micros_now);
+    }
+
+
 
     int32_t sleep_usec = std::max(0, std::max(1, loop_delay) * 1000 - delta_usec);
 

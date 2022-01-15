@@ -123,6 +123,8 @@ float ripples1d( float k, float nth )
 //    return 0.25f + 0.75f * foo;
 }
 
+/*
+Unused and can be deleted
 float ripples2d( float nth )
 {
     float grass_percent = nth * (1.0 / NUM_LEDS);
@@ -147,6 +149,7 @@ float ripples2d( float nth )
     return 0.02f + 0.98f * foo;
 //    return 0.25f + 0.75f * foo;
 }
+*/
 
 void ripples_pattern(CRGB ripple_color, bool wander_color)
 {
@@ -162,6 +165,7 @@ void ripples_pattern(CRGB ripple_color, bool wander_color)
                 const uint16_t color_i = wander * (color_delta_mult >> 3);
                 color_a_wheel_i = color_i + ((global_i * color_delta_mult ) >> 4);
                 color_a = ColorMap(color_a_wheel_i);
+                ripple_color = color_a;
             }
 
             // amount should be 0 to 1
@@ -205,6 +209,13 @@ void PatternProcessor() {
         global_brightness = DEFAULT_BRIGHTNESS;
         clearLonger();
         last_update_t = millis();
+    }
+
+    //
+    if (global_frames % 1000 == 0) {
+        // Things seem to be getting written past the end of the array.
+        // Occasionally clear all of that out
+        clearLonger();
     }
 
     // Do something to guarentee color_a is not blackish for color_a patterns

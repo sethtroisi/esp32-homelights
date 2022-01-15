@@ -18,10 +18,10 @@ CRGB leds[MAX_NUM_STRIPS * MAX_NUM_LEDS];
 int NUM_LEDS = MAX_NUM_LEDS;
 int NUM_STRIPS = MAX_NUM_STRIPS;
 
-#define DATA_PIN_1 25
+#define DATA_PIN_1 12
 #define DATA_PIN_2 13
 #define DATA_PIN_3 14
-#define DATA_PIN_4 12
+#define DATA_PIN_4 25
 #define DATA_PIN_5 26
 #define DATA_PIN_6 27
 #define DATA_PIN_7 32

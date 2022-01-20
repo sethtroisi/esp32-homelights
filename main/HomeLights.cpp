@@ -13,6 +13,8 @@
 // TODO where is order does this belong
 #include "HomeLights.h"
 
+#include "esp32_extra.h"
+
 #include <cmath>
 #include <cassert>
 #include <cstdint>
@@ -604,6 +606,7 @@ int ProcessCommand(string cmd) {
         global_s = 32;
         color_delta_mult = 32 * 64;
         current_pattern = SNAKE;
+        // TODO set snake_colors randomly
         return 26;
     } else if (cmd == "METEOR_SHOWER") {
         meteorSetup();
@@ -931,8 +934,8 @@ void hl_setup() {
      * [ D3 ] [ D2 ]
      * [ A2 ] [ A3 ]
      * [ A0 ] [ A1 ]
-     * 
-     * v1 PCB layout is 
+     *
+     * v1 PCB layout is
      * pins: D13, D12, D14, D27, D26, D25, D33, D32
      * strp: [8   7]  [6    5    4]  [3    2    1]
      * strips: 8 ? ? ? ? ?, ? ? X
@@ -942,6 +945,15 @@ void hl_setup() {
      * Note FastLED wants to know pins at compile time and array access
      * seems not to be const expr. So I have to do this.
      */
+
+#define DATA_PIN_1 12
+#define DATA_PIN_2 13
+#define DATA_PIN_3 14
+#define DATA_PIN_4 25
+#define DATA_PIN_5 26
+#define DATA_PIN_6 27
+#define DATA_PIN_7 32
+#define DATA_PIN_8 33
 
     FastLED.addLeds<STRAND_TYPE, DATA_PIN_1, COLOR_ORDER>(leds, NUM_LEDS);
     if (NUM_STRIPS >= 2) FastLED.addLeds<STRAND_TYPE, DATA_PIN_2, COLOR_ORDER>(leds, 1*NUM_LEDS, NUM_LEDS);

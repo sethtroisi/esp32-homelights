@@ -1,1 +1,1 @@
-../../../../../../../photon/HomeLights/src/fake_shader.h
+/home/five/Scripts/Arduino/photon/HomeLights/src/fake_shader.h

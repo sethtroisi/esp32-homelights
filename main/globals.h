@@ -1,1 +1,1 @@
-../../../../../../../photon/HomeLights/src/globals.h
+/home/five/Scripts/Arduino/photon/HomeLights/src/globals.h

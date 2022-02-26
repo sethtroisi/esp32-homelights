@@ -1,1 +1,1 @@
-../../../../../../../photon/HomeLights/src/consts.h
+/home/five/Scripts/Arduino/photon/HomeLights/src/consts.h

@@ -1,0 +1,1 @@
+/home/five/Scripts/Arduino/photon/HomeLights/src/globals.cpp

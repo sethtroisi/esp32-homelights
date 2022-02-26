@@ -1,1 +1,1 @@
-../../../../../../../photon/HomeLights/src/homegrown_effects.h
+/home/five/Scripts/Arduino/photon/HomeLights/src/homegrown_effects.h

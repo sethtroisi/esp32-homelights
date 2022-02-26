@@ -3,13 +3,11 @@
 //--------------------------------------------------------------------------||
 // Main command processor
 
-#include <string>
+#include "Particle.h"
 
-void PatternProcessor();
-int ProcessCommand(std::string cmd);
+void logString(string key);
+void logKeyValue(string key, string value);
+void logValue(string key, float value);
 
-// TODO clearLonger, clear, pause or something
-
-// TODO rename
 void hl_setup();
 void hl_loop();

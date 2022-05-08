@@ -83,14 +83,14 @@ void app_main() {
   /**
    * Tasks must never end:
    * From https://www.freertos.org/a00125.html
-   * 
+   *
    * "Tasks are normally implemented as an infinite loop;
    *  the function which implements the task must never attempt to return or exit.
    *  Tasks can, however, delete themselves."
    */
 
-  ESP_LOGI(TAG, "Creating task for receiving commands()\n");
-  xTaskCreate(&recieve_commands, "Recieve Commands", /*usStackDepth=*/ 4000, (void*) NULL, /*uxPriority=*/ 6, NULL);
+  //ESP_LOGI(TAG, "Creating task for receiving commands()\n");
+  //xTaskCreate(&recieve_commands, "Recieve Commands", /*usStackDepth=*/ 4000, (void*) NULL, /*uxPriority=*/ 6, NULL);
 
   vTaskDelay(pdMS_TO_TICKS(1000));
   ESP_LOGI(TAG, "Creating task for home_lights()\n");

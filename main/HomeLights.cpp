@@ -38,6 +38,10 @@ using std::string;
 
 #include "PatternRunner.h"
 
+// Forward definition to avoid recursive includes
+void loadMIDIEffects(uint8_t preset);
+
+
 // Some effect processors that have been extracted
 //#include "homegrown_effects.h"
 //#include "adopted_effects.h"
@@ -87,12 +91,12 @@ void FASTLED_safe_show() {
 
 uint8_t read_serial_byte() {
     // Configure a temporary buffer for the incoming data
-    uint8_t data;
+    uint8_t data = 0;
 
     // Read data from the UART
     int len = uart_read_bytes(UART_NUM_0, &data, 1, 20 / portTICK_PERIOD_MS);
     if (len) {
-        ESP_LOGI(TAG, "Recv %d", data);
+        //ESP_LOGI(TAG, "Recv %d", data);
         return data;
     } else {
         return 0;
@@ -147,9 +151,10 @@ void hl_setup() {
      * [ A0 ] [ A1 ]
      *
      * v1 PCB layout is
-     * pins: D13, D12, D14, D27, D26, D25, D33, D32
-     * strp: [8   7]  [6    5    4]  [3    2    1]
-     * strips: 8 ? ?, ? ? ?, ? ? ?
+     * Connectors: [1 2 3]  [4 5 6] [7 8 -]
+     * --------------------------------------------
+     * pins:   D13, D12, D14, D27, D26, D25, D33, D32
+     * strips:           4    123?           7    8
      */
 
     /**
@@ -157,27 +162,32 @@ void hl_setup() {
      * seems not to be const expr. So I have to do this.
      */
 
-    NUM_LEDS = 150;
+    NUM_LEDS = 75;
     NUM_STRIPS = 3;
     assert(NUM_STRIPS <= MAX_NUM_STRIPS);
 
-#define DATA_PIN_1 25 //12
-#define DATA_PIN_2 26 //13
-#define DATA_PIN_3 27 //14
-// #define DATA_PIN_4 25
-// #define DATA_PIN_5 26
-// #define DATA_PIN_6 27
-// #define DATA_PIN_7 32
-// #define DATA_PIN_8 33
+#define DATA_PIN_CONN_1 32
+#define DATA_PIN_CONN_2 33
+#define DATA_PIN_CONN_3 25
+#define DATA_PIN_CONN_4 26
+#define DATA_PIN_CONN_5 27
+#define DATA_PIN_CONN_6 14
+#define DATA_PIN_CONN_7 12
+#define DATA_PIN_CONN_8 13
 
-    FastLED.addLeds<STRAND_TYPE, DATA_PIN_1, COLOR_ORDER>(leds, NUM_LEDS);
-    if (NUM_STRIPS >= 2) FastLED.addLeds<STRAND_TYPE, DATA_PIN_2, COLOR_ORDER>(leds, 1*NUM_LEDS, NUM_LEDS);
-    if (NUM_STRIPS >= 3) FastLED.addLeds<STRAND_TYPE, DATA_PIN_3, COLOR_ORDER>(leds, 2*NUM_LEDS, NUM_LEDS);
-    // if (NUM_STRIPS >= 4) FastLED.addLeds<STRAND_TYPE, DATA_PIN_4, COLOR_ORDER>(leds, 3*NUM_LEDS, NUM_LEDS);
-    // if (NUM_STRIPS >= 5) FastLED.addLeds<STRAND_TYPE, DATA_PIN_5, COLOR_ORDER>(leds, 4*NUM_LEDS, NUM_LEDS);
-    // if (NUM_STRIPS >= 6) FastLED.addLeds<STRAND_TYPE, DATA_PIN_6, COLOR_ORDER>(leds, 5*NUM_LEDS, NUM_LEDS);
-    // if (NUM_STRIPS >= 7) FastLED.addLeds<STRAND_TYPE, DATA_PIN_7, COLOR_ORDER>(leds, 6*NUM_LEDS, NUM_LEDS);
-    // if (NUM_STRIPS >= 8) FastLED.addLeds<STRAND_TYPE, DATA_PIN_8, COLOR_ORDER>(leds, 7*NUM_LEDS, NUM_LEDS);
+    /**
+     * TODO should be nice to write a few black pixel past the end of each LED but will certainly break
+     * this or other code
+     */
+
+    FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_4, COLOR_ORDER>(__leds, NUM_LEDS);
+    if (NUM_STRIPS >= 2) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_5, COLOR_ORDER>(__leds, 1*NUM_LEDS, NUM_LEDS);
+    if (NUM_STRIPS >= 3) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_6, COLOR_ORDER>(__leds, 2*NUM_LEDS, NUM_LEDS);
+    if (NUM_STRIPS >= 4) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_1, COLOR_ORDER>(__leds, 3*NUM_LEDS, NUM_LEDS);
+    // if (NUM_STRIPS >= 5) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_2, COLOR_ORDER>(__leds, 4*NUM_LEDS, NUM_LEDS);
+    // if (NUM_STRIPS >= 6) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_3, COLOR_ORDER>(__leds, 5*NUM_LEDS, NUM_LEDS);
+    // if (NUM_STRIPS >= 7) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_7, COLOR_ORDER>(__leds, 6*NUM_LEDS, NUM_LEDS);
+    // if (NUM_STRIPS >= 8) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_8, COLOR_ORDER>(__leds, 7*NUM_LEDS, NUM_LEDS);
 
     FastLED.setCorrection(TypicalLEDStrip);
     FastLED.setBrightness(DEFAULT_BRIGHTNESS);
@@ -191,6 +201,8 @@ void hl_setup() {
 
     // Default pattern to run.
     ProcessCommand(DEFAULT_PATTERN);
+
+    loadMIDIEffects(0);
 }
 
 void hl_loop() {
@@ -206,6 +218,14 @@ void hl_loop() {
     {
         CheckAndProcessMIDI();
         PatternProcessor();
+        PatternPostProcessor();
+
+        // Set 0th LED to let us know this is working
+        setPixel(0, ColorMap(256 * global_frames, 3));
+
+        // Set 1st LED to let us see MIDI events being processed
+        setPixel(1, ColorMap(256 * global_MIDI_count, 3));
+
         showStrips();
     }
 

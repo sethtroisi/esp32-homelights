@@ -48,6 +48,9 @@ void loadMIDIEffects(uint8_t preset);
 
 //---------------------------------------------------------------------------||
 
+// Build in LED
+//#define BLINK_GPIO 2
+
 #define USE_SERIAL  1
 
 static const char *TAG = "HomeLights";
@@ -86,6 +89,39 @@ void FASTLED_safe_show() {
     // Be double safe
     ets_delay_us(300);
 }
+
+
+//--------------------------------------------------------------------------||
+
+// "Boot" button
+#define BUTTON_EXT_GPIO GPIO_NUM_4
+#define BUTTON_INT_GPIO GPIO_NUM_0
+
+static void configure_manual_button(void)
+{
+    gpio_reset_pin(BUTTON_EXT_GPIO);
+    gpio_reset_pin(BUTTON_INT_GPIO);
+
+    gpio_set_direction(BUTTON_EXT_GPIO, GPIO_MODE_INPUT);
+    gpio_set_direction(BUTTON_INT_GPIO, GPIO_MODE_INPUT);
+
+    // External button is pull down (tied to gnd)
+    gpio_set_pull_mode(BUTTON_EXT_GPIO, GPIO_PULLUP_ONLY);
+}
+
+bool check_next_button(void)
+{
+    // These buttons are both
+    bool button_int = !gpio_get_level(BUTTON_INT_GPIO);
+    bool button_ext = !gpio_get_level(BUTTON_EXT_GPIO);
+
+    if (button_int || button_ext)
+        ESP_LOGI(TAG, "Buttons: %d %d", button_int, button_ext);
+
+    return button_int || button_ext;
+}
+
+
 
 //--------------------------------------------------------------------------||
 
@@ -130,6 +166,9 @@ void setup_usb_serial ()
 }
 
 
+//--------------------------------------------------------------------------||
+
+
 void hl_setup() {
     /* TODO find an ESP32 replacement
     DeviceNameHelperEEPROM::instance().setup(EEPROM_OFFSET_DEVICE_NAME);
@@ -142,6 +181,7 @@ void hl_setup() {
     */
 
    setup_usb_serial();
+   configure_manual_button();
 
     /**
      * v0 PCB layout was
@@ -183,7 +223,7 @@ void hl_setup() {
     FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_4, COLOR_ORDER>(__leds, NUM_LEDS);
     if (NUM_STRIPS >= 2) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_5, COLOR_ORDER>(__leds, 1*NUM_LEDS, NUM_LEDS);
     if (NUM_STRIPS >= 3) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_6, COLOR_ORDER>(__leds, 2*NUM_LEDS, NUM_LEDS);
-    if (NUM_STRIPS >= 4) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_1, COLOR_ORDER>(__leds, 3*NUM_LEDS, NUM_LEDS);
+    // if (NUM_STRIPS >= 4) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_1, COLOR_ORDER>(__leds, 3*NUM_LEDS, NUM_LEDS);
     // if (NUM_STRIPS >= 5) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_2, COLOR_ORDER>(__leds, 4*NUM_LEDS, NUM_LEDS);
     // if (NUM_STRIPS >= 6) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_3, COLOR_ORDER>(__leds, 5*NUM_LEDS, NUM_LEDS);
     // if (NUM_STRIPS >= 7) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_7, COLOR_ORDER>(__leds, 6*NUM_LEDS, NUM_LEDS);
@@ -200,10 +240,13 @@ void hl_setup() {
     delay(10);
 
     // Default pattern to run.
-    ProcessCommand(DEFAULT_PATTERN);
+    //ProcessCommand(DEFAULT_PATTERN);
 
+    // Load Twinkle Midi
     loadMIDIEffects(0);
 }
+
+// Global ish debounce thing
 
 void hl_loop() {
     const float INVERSE_MICROS = 1e-6;
@@ -216,6 +259,15 @@ void hl_loop() {
 
     if (global_tDelta < 0) global_tDelta = INVERSE_MICROS;
     {
+        static bool last_button;
+        if (!check_next_button()) {
+            last_button = false;
+        } else if (!last_button) {
+            last_button = true;
+            RefreshLastUpdate();
+            loadMIDIEffects(10);
+        }
+
         CheckAndProcessMIDI();
         PatternProcessor();
         PatternPostProcessor();
@@ -244,9 +296,8 @@ void hl_loop() {
     // Broken if interupts are disabled and micros isn't updated
     global_tDelta = (micros_now - micros_last) * INVERSE_MICROS;
 
-
     if (global_frames % 200 == 0) {
-        ESP_LOGI(TAG, "%d | %llu => Pattern %d (%llu)\n", global_frames, micros_now, current_pattern, micros_after - micros_now);
+        ESP_LOGI(TAG, "%d | %llu => Pattern %d (%llu)", global_frames, micros_now, current_pattern, micros_after - micros_now);
     }
 
     int32_t sleep_usec = std::max(0, std::max(1, loop_delay) * 1000 - delta_usec);

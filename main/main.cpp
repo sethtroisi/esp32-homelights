@@ -27,8 +27,6 @@ SemaphoreHandle_t xMutex;
 
 static const char *TAG = "LIGHTS";
 
-// SN74HCT245 OUTPUT_ENABLE, active_low
-#define LIGHTS_DISABLE_PIN GPIO_NUM_15
 
 void home_lights_run(void *pvParameters) {
   hl_setup();
@@ -56,28 +54,8 @@ extern "C" {
 }
 
 void app_main() {
-  // TODO investigate
-  // board_led_operation, board_led_init
-  // Onboard LED
-  gpio_set_direction(GPIO_NUM_2, GPIO_MODE_OUTPUT);
-  gpio_set_level(GPIO_NUM_2, 0);
-
-  {
-    bool disable_lights = 0;
-    gpio_reset_pin(LIGHTS_DISABLE_PIN);
-    gpio_set_direction(LIGHTS_DISABLE_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_pull_mode(LIGHTS_DISABLE_PIN, GPIO_FLOATING);
-#define LIGHTS_DISABLE_PIN GPIO_NUM_15
-    gpio_set_level(LIGHTS_DISABLE_PIN, disable_lights);
-    if (disable_lights) {
-      ESP_LOGI(TAG, "LIGHTS DISABLED AT 3->5 volt converter\n");
-      vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-  }
 
   // TODO flash a ACK pattern
-
-
   xMutex = xSemaphoreCreateMutex();
 
   /**

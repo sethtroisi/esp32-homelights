@@ -39,7 +39,7 @@ using std::string;
 #include "PatternRunner.h"
 
 // Forward definition to avoid recursive includes
-void loadMIDIEffects(uint8_t preset);
+void loadMIDIEffects(short preset);
 
 
 // Some effect processors that have been extracted
@@ -93,8 +93,40 @@ void FASTLED_safe_show() {
 
 //--------------------------------------------------------------------------||
 
-// "Boot" button
+// SN74HCT245 OUTPUT_ENABLE, active_low
+#define LIGHTS_DISABLE_PIN GPIO_NUM_15
+#define ONBOARD_LED_PIN GPIO_NUM_2
+
+static void enable_converter() {
+    // TODO investigate
+    // board_led_operation, board_led_init
+    // Onboard LED
+
+    gpio_set_direction(ONBOARD_LED_PIN, GPIO_MODE_OUTPUT);
+    for (int i = 0; i < 5; i++) {
+        gpio_set_level(ONBOARD_LED_PIN, 1);
+        vTaskDelay(pdMS_TO_TICKS(200));
+        gpio_set_level(ONBOARD_LED_PIN, 0);
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+
+    {
+        const bool disable_lights = 0;
+        gpio_reset_pin(LIGHTS_DISABLE_PIN);
+        gpio_set_direction(LIGHTS_DISABLE_PIN, GPIO_MODE_OUTPUT);
+        gpio_set_pull_mode(LIGHTS_DISABLE_PIN, GPIO_FLOATING);
+        gpio_set_level(LIGHTS_DISABLE_PIN, disable_lights);
+        if (disable_lights) {
+            ESP_LOGI(TAG, "LIGHTS DISABLED AT 3->5 volt converter\n");
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
+}
+
+// D2 is connected to onboard LED which could be fun (if I pulled it high?)
+
 #define BUTTON_EXT_GPIO GPIO_NUM_4
+// "Boot" button
 #define BUTTON_INT_GPIO GPIO_NUM_0
 
 static void configure_manual_button(void)
@@ -109,14 +141,14 @@ static void configure_manual_button(void)
     gpio_set_pull_mode(BUTTON_EXT_GPIO, GPIO_PULLUP_ONLY);
 }
 
-bool check_next_button(void)
+static bool check_next_button(void)
 {
     // These buttons are both
     bool button_int = !gpio_get_level(BUTTON_INT_GPIO);
     bool button_ext = !gpio_get_level(BUTTON_EXT_GPIO);
 
-    if (button_int || button_ext)
-        ESP_LOGI(TAG, "Buttons: %d %d", button_int, button_ext);
+    // if (button_int || button_ext)
+    //     ESP_LOGI(TAG, "Buttons: %d %d", button_int, button_ext);
 
     return button_int || button_ext;
 }
@@ -125,22 +157,7 @@ bool check_next_button(void)
 
 //--------------------------------------------------------------------------||
 
-uint8_t read_serial_byte() {
-    // Configure a temporary buffer for the incoming data
-    uint8_t data = 0;
-
-    // Read data from the UART
-    int len = uart_read_bytes(UART_NUM_0, &data, 1, 20 / portTICK_PERIOD_MS);
-    if (len) {
-        //ESP_LOGI(TAG, "Recv %d", data);
-        return data;
-    } else {
-        return 0;
-    }
-}
-
-
-void setup_usb_serial ()
+static void setup_usb_serial ()
 {
     /* Configure parameters of an UART driver,
      * communication pins and install the driver */
@@ -165,6 +182,19 @@ void setup_usb_serial ()
 
 }
 
+uint8_t read_serial_byte() {
+    // Configure a temporary buffer for the incoming data
+    uint8_t data = 0;
+
+    // Read data from the UART
+    int len = uart_read_bytes(UART_NUM_0, &data, 1, 20 / portTICK_PERIOD_MS);
+    if (len) {
+        //ESP_LOGI(TAG, "Recv %d", data);
+        return data;
+    } else {
+        return 0;
+    }
+}
 
 //--------------------------------------------------------------------------||
 
@@ -180,6 +210,7 @@ void hl_setup() {
     string name = DeviceNameHelperEEPROM::instance().getName();
     */
 
+   enable_converter();
    setup_usb_serial();
    configure_manual_button();
 
@@ -258,16 +289,35 @@ void hl_loop() {
     micros_now = micros(); // 32 bit => overflows every hour!
 
     if (global_tDelta < 0) global_tDelta = INVERSE_MICROS;
-    {
-        static bool last_button;
-        if (!check_next_button()) {
-            last_button = false;
-        } else if (!last_button) {
-            last_button = true;
-            RefreshLastUpdate();
-            loadMIDIEffects(10);
-        }
 
+    // Check for manual pattern advance.
+    {
+        const uint64_t DEBOUNCE_MILLIS = 75;
+
+        // What the last "debounced" state was
+        static bool button_last_state = 0;
+        // last button was button_last_state.
+        static uint64_t button_state_time = 0;
+
+        bool button_state = check_next_button();
+
+        if (button_state == button_last_state) {
+            button_state_time = millis();
+        } else {
+            if (millis() > button_state_time + DEBOUNCE_MILLIS) {
+                ESP_LOGI(TAG, "Buttons: %d @ %llu", button_state, button_state_time);
+                button_last_state = button_state;
+                if (button_state) {
+                    RefreshLastUpdate();
+                    // Need to add blank when using this but maybe not when using the other way
+                    loadMIDIEffects(-1);
+                }
+            }
+        }
+    }
+
+    // Main pattern loop.
+    {
         CheckAndProcessMIDI();
         PatternProcessor();
         PatternPostProcessor();

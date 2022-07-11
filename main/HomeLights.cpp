@@ -97,6 +97,13 @@ void FASTLED_safe_show() {
 #define LIGHTS_DISABLE_PIN GPIO_NUM_15
 #define ONBOARD_LED_PIN GPIO_NUM_2
 
+static void blink_onboard_led(uint16_t duration_millis) {
+    gpio_set_level(ONBOARD_LED_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(duration_millis));
+    gpio_set_level(ONBOARD_LED_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(duration_millis));
+}
+
 static void enable_converter() {
     // TODO investigate
     // board_led_operation, board_led_init
@@ -104,10 +111,7 @@ static void enable_converter() {
 
     gpio_set_direction(ONBOARD_LED_PIN, GPIO_MODE_OUTPUT);
     for (int i = 0; i < 5; i++) {
-        gpio_set_level(ONBOARD_LED_PIN, 1);
-        vTaskDelay(pdMS_TO_TICKS(200));
-        gpio_set_level(ONBOARD_LED_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(200));
+        blink_onboard_led(100);
     }
 
     {
@@ -153,6 +157,36 @@ static bool check_next_button(void)
     return button_int || button_ext;
 }
 
+/**
+ * @brief Poll this frequently to see when button_state changes
+ *
+ * @return true once (and only once) per button press.
+ */
+static bool next_button_debounced(void)
+{
+    // Not real MILLIS because of interupt disable in FASTLED
+    const uint64_t DEBOUNCE_MILLIS = 10;
+
+    // What the last "debounced" state was
+    static bool button_last_state = 0;
+    // last button was button_last_state.
+    static uint64_t button_state_time = 0;
+
+    bool button_state = check_next_button();
+
+    if (button_state == button_last_state) {
+        button_state_time = millis();
+    } else {
+        if (millis() > button_state_time + DEBOUNCE_MILLIS) {
+            ESP_LOGI(TAG, "Buttons: %d @ %llu", button_state, button_state_time);
+            button_last_state = button_state;
+            if (button_state) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
 
 //--------------------------------------------------------------------------||
@@ -291,29 +325,12 @@ void hl_loop() {
     if (global_tDelta < 0) global_tDelta = INVERSE_MICROS;
 
     // Check for manual pattern advance.
-    {
-        const uint64_t DEBOUNCE_MILLIS = 75;
+    if (next_button_debounced()) {
+        blink_onboard_led(50);
 
-        // What the last "debounced" state was
-        static bool button_last_state = 0;
-        // last button was button_last_state.
-        static uint64_t button_state_time = 0;
-
-        bool button_state = check_next_button();
-
-        if (button_state == button_last_state) {
-            button_state_time = millis();
-        } else {
-            if (millis() > button_state_time + DEBOUNCE_MILLIS) {
-                ESP_LOGI(TAG, "Buttons: %d @ %llu", button_state, button_state_time);
-                button_last_state = button_state;
-                if (button_state) {
-                    RefreshLastUpdate();
-                    // Need to add blank when using this but maybe not when using the other way
-                    loadMIDIEffects(-1);
-                }
-            }
-        }
+        RefreshLastUpdate();
+        // -1 => Next pattern (including blanks)
+        loadMIDIEffects(-1);
     }
 
     // Main pattern loop.
@@ -322,11 +339,11 @@ void hl_loop() {
         PatternProcessor();
         PatternPostProcessor();
 
-        // Set 0th LED to let us know this is working
-        setPixel(0, ColorMap(256 * global_frames, 3));
+        // // Set 0th LED to let us know this is working
+        // setPixel(0, ColorMap(256 * global_frames, 3));
 
-        // Set 1st LED to let us see MIDI events being processed
-        setPixel(1, ColorMap(256 * global_MIDI_count, 3));
+        // // Set 1st LED to let us see MIDI events being processed
+        // setPixel(1, ColorMap(256 * global_MIDI_count, 3));
 
         showStrips();
     }

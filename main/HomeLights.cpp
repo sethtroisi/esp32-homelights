@@ -24,8 +24,12 @@
 #include "consts.h"
 #include "fake_shader.h"
 
+
 #include "FastLED.h"
 FASTLED_USING_NAMESPACE
+
+// Hack for RGBW
+#include "FastLED_RGBW.h"
 
 #include "color_consts.h"
 
@@ -267,8 +271,8 @@ void hl_setup() {
      * seems not to be const expr. So I have to do this.
      */
 
-    NUM_LEDS = 75;
-    NUM_STRIPS = 3;
+    NUM_LEDS = 150;
+    NUM_STRIPS = 1;
     assert(NUM_STRIPS <= MAX_NUM_STRIPS);
 
 #define DATA_PIN_CONN_1 32
@@ -285,16 +289,19 @@ void hl_setup() {
      * this or other code
      */
 
-    FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_4, COLOR_ORDER>(__leds, NUM_LEDS);
-    if (NUM_STRIPS >= 2) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_5, COLOR_ORDER>(__leds, 1*NUM_LEDS, NUM_LEDS);
-    if (NUM_STRIPS >= 3) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_6, COLOR_ORDER>(__leds, 2*NUM_LEDS, NUM_LEDS);
+    // Hacking for SK6812
+    FastLED.addLeds<WS2812B, DATA_PIN_CONN_4, RGB>((CRGB*) &__ledsRGBW[0], getRGBWsize(NUM_LEDS));;
+
+    //FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_4, COLOR_ORDER>(__leds, getRGBWsize(NUM_LEDS));
+    //if (NUM_STRIPS >= 2) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_5, COLOR_ORDER>(__leds + 1*NUM_LEDS, getRGBWsize(NUM_LEDS));
+    //if (NUM_STRIPS >= 3) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_6, COLOR_ORDER>(__leds + 2*NUM_LEDS, getRGBWsize(NUM_LEDS));
     // if (NUM_STRIPS >= 4) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_1, COLOR_ORDER>(__leds, 3*NUM_LEDS, NUM_LEDS);
     // if (NUM_STRIPS >= 5) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_2, COLOR_ORDER>(__leds, 4*NUM_LEDS, NUM_LEDS);
     // if (NUM_STRIPS >= 6) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_3, COLOR_ORDER>(__leds, 5*NUM_LEDS, NUM_LEDS);
     // if (NUM_STRIPS >= 7) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_7, COLOR_ORDER>(__leds, 6*NUM_LEDS, NUM_LEDS);
     // if (NUM_STRIPS >= 8) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_8, COLOR_ORDER>(__leds, 7*NUM_LEDS, NUM_LEDS);
 
-    FastLED.setCorrection(TypicalLEDStrip);
+//    FastLED.setCorrection(TypicalLEDStrip);
     FastLED.setBrightness(DEFAULT_BRIGHTNESS);
     FastLED.setDither(DEFAULT_BRIGHTNESS < 255);
     FastLED.setMaxPowerInVoltsAndMilliamps(5, 2000);
@@ -308,7 +315,10 @@ void hl_setup() {
     //ProcessCommand(DEFAULT_PATTERN);
 
     // Load Twinkle Midi
-    loadMIDIEffects(0);
+    //loadMIDIEffects(0);
+
+    // SNAKE
+    loadMIDIEffects(2);
 }
 
 // Global ish debounce thing

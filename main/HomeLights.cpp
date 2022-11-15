@@ -39,7 +39,7 @@ using std::string;
 #include "PatternRunner.h"
 
 // Forward definition to avoid recursive includes
-void loadMIDIEffects(short preset);
+//void loadMIDIEffects(short preset);
 
 
 // Some effect processors that have been extracted
@@ -267,8 +267,8 @@ void hl_setup() {
      * seems not to be const expr. So I have to do this.
      */
 
-    NUM_LEDS = 75;
-    NUM_STRIPS = 3;
+    NUM_LEDS = 136;
+    NUM_STRIPS = 1;
     assert(NUM_STRIPS <= MAX_NUM_STRIPS);
 
 #define DATA_PIN_CONN_1 32
@@ -286,8 +286,12 @@ void hl_setup() {
      */
 
     FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_4, COLOR_ORDER>(__leds, NUM_LEDS);
-    if (NUM_STRIPS >= 2) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_5, COLOR_ORDER>(__leds, 1*NUM_LEDS, NUM_LEDS);
-    if (NUM_STRIPS >= 3) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_6, COLOR_ORDER>(__leds, 2*NUM_LEDS, NUM_LEDS);
+    // HACK FOR MOURNING OWL both strips are the "same"
+    FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_5, COLOR_ORDER>(__leds, NUM_LEDS);
+    FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_6, COLOR_ORDER>(__leds, NUM_LEDS);
+
+    // if (NUM_STRIPS >= 2) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_5, COLOR_ORDER>(__leds, 1*NUM_LEDS, NUM_LEDS);
+    // if (NUM_STRIPS >= 3) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_6, COLOR_ORDER>(__leds, 2*NUM_LEDS, NUM_LEDS);
     // if (NUM_STRIPS >= 4) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_1, COLOR_ORDER>(__leds, 3*NUM_LEDS, NUM_LEDS);
     // if (NUM_STRIPS >= 5) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_2, COLOR_ORDER>(__leds, 4*NUM_LEDS, NUM_LEDS);
     // if (NUM_STRIPS >= 6) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_3, COLOR_ORDER>(__leds, 5*NUM_LEDS, NUM_LEDS);
@@ -328,22 +332,27 @@ void hl_loop() {
     if (next_button_debounced()) {
         blink_onboard_led(50);
 
-        RefreshLastUpdate();
+        //RefreshLastUpdate();
         // -1 => Next pattern (including blanks)
         loadMIDIEffects(-1);
+        last_update_button_t = millis();
     }
 
     // Main pattern loop.
     {
         CheckAndProcessMIDI();
         PatternProcessor();
-        PatternPostProcessor();
+        //PatternPostProcessor();
 
         // // Set 0th LED to let us know this is working
         // setPixel(0, ColorMap(256 * global_frames, 3));
 
         // // Set 1st LED to let us see MIDI events being processed
         // setPixel(1, ColorMap(256 * global_MIDI_count, 3));
+
+        // Turn of the "extra" LEDs. This keeps them from occasionally becoming a color
+        for (uint32_t i = NUM_LEDS; i < MAX_NUM_LEDS; i++)
+            setPixel(i, CRGB::Black);
 
         showStrips();
     }

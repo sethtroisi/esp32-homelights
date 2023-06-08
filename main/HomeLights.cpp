@@ -191,8 +191,6 @@ static bool next_button_debounced(void)
 
 //--------------------------------------------------------------------------||
 
-uint8_t read_serial_byte() { return 0; }
-
 //--------------------------------------------------------------------------||
 
 
@@ -260,70 +258,144 @@ void hl_setup() {
 
 // Global ish debounce thing
 
-void hl_loop() {
-    const float INVERSE_MICROS = 1e-6;
+void hl_loop() {}
 
-    // interupts are disabled during FastLed.show() so we have to guess at timing
-    uint64_t write_usec_guess = guess_show_timing_usec();
 
-    micros_last = micros_now;
-    micros_now = micros(); // 32 bit => overflows every hour!
+// #include "mpr121.h"
 
-    if (global_tDelta < 0) global_tDelta = INVERSE_MICROS;
+// void hl_loop() {
 
-    // Check for manual pattern advance.
-    if (next_button_debounced()) {
-        blink_onboard_led(50);
+// 	ESP_LOGI(TAG, "CONFIG_I2C_ADDRESS=0x%X", CONFIG_I2C_ADDRESS);
+// 	ESP_LOGI(TAG, "CONFIG_SCL_GPIO=%d", CONFIG_SCL_GPIO);
+// 	ESP_LOGI(TAG, "CONFIG_SDA_GPIO=%d", CONFIG_SDA_GPIO);
+// 	ESP_LOGI(TAG, "CONFIG_IRQ_GPIO=%d", CONFIG_IRQ_GPIO);
+// 	MPR121_t dev;
 
-        //RefreshLastUpdate();
-        // -1 => Next pattern (including blanks)
-        loadMIDIEffects(-1);
-        last_update_button_t = millis();
-    }
+// 	uint16_t touchThreshold = 40;
+// 	uint16_t releaseThreshold = 20;
+// 	//uint16_t interruptPin = 4;
 
-    // Main pattern loop.
-    {
-        PatternProcessor();
-        //PatternPostProcessor();
+// 	bool ret = MPR121_begin(&dev, CONFIG_I2C_ADDRESS, touchThreshold, releaseThreshold, CONFIG_IRQ_GPIO, CONFIG_SDA_GPIO, CONFIG_SCL_GPIO);
+// 	ESP_LOGI(TAG, "MPR121_begin=%d", ret);
+// 	if (ret == false) {
+// 		switch (MPR121_getError(&dev)) {
+// 			case NO_ERROR:
+// 				ESP_LOGE(TAG, "no error");
+// 				break;
+// 			case ADDRESS_UNKNOWN:
+// 				ESP_LOGE(TAG, "incorrect address");
+// 				break;
+// 			case READBACK_FAIL:
+// 				ESP_LOGE(TAG, "readback failure");
+// 				break;
+// 			case OVERCURRENT_FLAG:
+// 				ESP_LOGE(TAG, "overcurrent on REXT pin");
+// 				break;
+// 			case OUT_OF_RANGE:
+// 				ESP_LOGE(TAG, "electrode out of range");
+// 				break;
+// 			case NOT_INITED:
+// 				ESP_LOGE(TAG, "not initialised");
+// 				break;
+// 			default:
+// 				ESP_LOGE(TAG, "unknown error");
+// 				break;
+// 		}
+// 		while(1) {
+// 			vTaskDelay(1);
+// 		}
+// 	}
 
-        // // Set 0th LED to let us know this is working
-        // setPixel(0, ColorMap(256 * global_frames, 3));
 
-        // // Set 1st LED to let us see MIDI events being processed
-        // setPixel(1, ColorMap(256 * global_MIDI_count, 3));
+// #if 0
+// 	MPR121_setTouchThresholdAll(&dev, 40);	// this is the touch threshold - setting it low makes it more like a proximity trigger, default value is 40 for touch
+// 	MPR121_setReleaseThresholdAll(&dev, 20);	// this is the release threshold - must ALWAYS be smaller than the touch threshold, default value is 20 for touch
+// #endif
 
-        // Turn of the "extra" LEDs. This keeps them from occasionally becoming a color
-        for (uint32_t i = NUM_LEDS; i < MAX_NUM_LEDS; i++)
-            setPixel(i, CRGB::Black);
 
-        showStrips();
-    }
+// 	MPR121_setFFI(&dev, FFI_10); // AFE Configuration 1
+// 	MPR121_setSFI(&dev, SFI_10); // AFE Configuration 2
+// 	MPR121_setGlobalCDT(&dev, CDT_4US);  // reasonable for larger capacitances
+// 	MPR121_autoSetElectrodesDefault(&dev, true);	// autoset all electrode settings
 
-    uint64_t micros_after = micros();
-    if (micros_after < micros_now) { // overflow happened
-        micros_after += (1LL << 32);
-    }
 
-    int32_t delta_usec = (micros_after - micros_now);
-    if (delta_usec < write_usec_guess) {
-        // FastLED disables interupts so micros & millis doesn't work.
-        delta_usec += write_usec_guess;
-    }
+// 	while(1) {
+// 		MPR121_updateAll(&dev);
+// 		for (int i = 0; i < 12; i++) {
+// 			if (MPR121_isNewTouch(&dev, i)) {
+// 				ESP_LOGI(TAG, "electrode %d was just touched", i);
+// 			} else if (MPR121_isNewRelease(&dev, i)) {
+// 				ESP_LOGI(TAG, "electrode %d was just released", i);
+// 			}
+// 		}
+// 		vTaskDelay(10);
+// 	}
+// }
 
-    global_t = micros_now * INVERSE_MICROS;
-    // Broken if interupts are disabled and micros isn't updated
-    global_tDelta = (micros_now - micros_last) * INVERSE_MICROS;
+// void hl_loop() {
+//     const float INVERSE_MICROS = 1e-6;
 
-    if (global_frames % 200 == 0) {
-        ESP_LOGI(TAG, "%d | %llu => Pattern %d (%llu)", global_frames, micros_now, current_pattern, micros_after - micros_now);
-    }
+//     // interupts are disabled during FastLed.show() so we have to guess at timing
+//     uint64_t write_usec_guess = guess_show_timing_usec();
 
-    int32_t sleep_usec = std::max(0, std::max(1, loop_delay) * 1000 - delta_usec);
+//     micros_last = micros_now;
+//     micros_now = micros(); // 32 bit => overflows every hour!
 
-    // Note: documentation says not to set long waits with delayMicroseconds
-    delayMicroseconds(sleep_usec % 1000);
-    delay(sleep_usec / 1000);
-}
+//     if (global_tDelta < 0) global_tDelta = INVERSE_MICROS;
+
+//     // Check for manual pattern advance.
+//     if (next_button_debounced()) {
+//         blink_onboard_led(50);
+
+//         //RefreshLastUpdate();
+//         // -1 => Next pattern (including blanks)
+//         loadMIDIEffects(-1);
+//         last_update_button_t = millis();
+//     }
+
+//     // Main pattern loop.
+//     {
+//         PatternProcessor();
+//         //PatternPostProcessor();
+
+//         // // Set 0th LED to let us know this is working
+//         // setPixel(0, ColorMap(256 * global_frames, 3));
+
+//         // // Set 1st LED to let us see MIDI events being processed
+//         // setPixel(1, ColorMap(256 * global_MIDI_count, 3));
+
+//         // Turn of the "extra" LEDs. This keeps them from occasionally becoming a color
+//         for (uint32_t i = NUM_LEDS; i < MAX_NUM_LEDS; i++)
+//             setPixel(i, CRGB::Black);
+
+//         showStrips();
+//     }
+
+//     uint64_t micros_after = micros();
+//     if (micros_after < micros_now) { // overflow happened
+//         micros_after += (1LL << 32);
+//     }
+
+//     int32_t delta_usec = (micros_after - micros_now);
+//     if (delta_usec < write_usec_guess) {
+//         // FastLED disables interupts so micros & millis doesn't work.
+//         delta_usec += write_usec_guess;
+//     }
+
+//     global_t = micros_now * INVERSE_MICROS;
+//     // Broken if interupts are disabled and micros isn't updated
+//     global_tDelta = (micros_now - micros_last) * INVERSE_MICROS;
+
+//     if (global_frames % 200 == 0) {
+//         ESP_LOGI(TAG, "%d | %llu => Pattern %d (%llu)", global_frames, micros_now, current_pattern, micros_after - micros_now);
+//     }
+
+//     int32_t sleep_usec = std::max(0, std::max(1, loop_delay) * 1000 - delta_usec);
+
+//     // Note: documentation says not to set long waits with delayMicroseconds
+//     delayMicroseconds(sleep_usec % 1000);
+//     delay(sleep_usec / 1000);
+// }
 
 
 //--------------------------------------------------------------------------||

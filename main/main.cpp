@@ -42,12 +42,12 @@ void home_lights_run(void *pvParameters) {
   vTaskDelete(NULL);
 }
 
-void recieve_commands(void *pvParameters) {
-  networking_main();
+// void recieve_commands(void *pvParameters) {
+//   networking_main();
 
-  // After network server is setup, delete this task
-  vTaskDelete(NULL);
-}
+//   // After network server is setup, delete this task
+//   vTaskDelete(NULL);
+// }
 
 extern "C" {
   void app_main();

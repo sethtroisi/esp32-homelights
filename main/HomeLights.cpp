@@ -191,61 +191,13 @@ static bool next_button_debounced(void)
 
 //--------------------------------------------------------------------------||
 
-static void setup_usb_serial ()
-{
-    /* Configure parameters of an UART driver,
-     * communication pins and install the driver */
-    uart_config_t uart_config = {
-        .baud_rate = 115200,
-        .data_bits = UART_DATA_8_BITS,
-        .parity    = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .rx_flow_ctrl_thresh = 122,
-        .source_clk = UART_SCLK_APB,
-    };
-
-    // TODO look into uart_get_buffered_data_len
-
-    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, /* BUFFER SIZE */ 512, 0, 0, NULL, 0));
-    ESP_ERROR_CHECK(uart_param_config(UART_NUM_0, &uart_config));
-    ESP_ERROR_CHECK(uart_set_pin(UART_NUM_0,
-        /* TX pin */ 1, /* RX pin */ 3,
-        /* RTS pin */ UART_PIN_NO_CHANGE, // technically 16
-        /* CTS pin */ UART_PIN_NO_CHANGE)); // technically 17
-
-}
-
-uint8_t read_serial_byte() {
-    // Configure a temporary buffer for the incoming data
-    uint8_t data = 0;
-
-    // Read data from the UART
-    int len = uart_read_bytes(UART_NUM_0, &data, 1, 20 / portTICK_PERIOD_MS);
-    if (len) {
-        //ESP_LOGI(TAG, "Recv %d", data);
-        return data;
-    } else {
-        return 0;
-    }
-}
+uint8_t read_serial_byte() { return 0; }
 
 //--------------------------------------------------------------------------||
 
 
 void hl_setup() {
-    /* TODO find an ESP32 replacement
-    DeviceNameHelperEEPROM::instance().setup(EEPROM_OFFSET_DEVICE_NAME);
-    for (int i = 0; i < 50 && !DeviceNameHelperEEPROM::instance().hasName(); i++) {
-        DeviceNameHelperEEPROM::instance().loop();
-        delay(1000);
-    }
-
-    string name = DeviceNameHelperEEPROM::instance().getName();
-    */
-
    enable_converter();
-   setup_usb_serial();
    configure_manual_button();
 
     /**
@@ -285,18 +237,9 @@ void hl_setup() {
      * this or other code
      */
 
-    FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_4, COLOR_ORDER>(__leds, NUM_LEDS);
     // HACK FOR MOURNING OWL both strips are the "same"
     FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_5, COLOR_ORDER>(__leds, NUM_LEDS);
     FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_6, COLOR_ORDER>(__leds, NUM_LEDS);
-
-    // if (NUM_STRIPS >= 2) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_5, COLOR_ORDER>(__leds, 1*NUM_LEDS, NUM_LEDS);
-    // if (NUM_STRIPS >= 3) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_6, COLOR_ORDER>(__leds, 2*NUM_LEDS, NUM_LEDS);
-    // if (NUM_STRIPS >= 4) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_1, COLOR_ORDER>(__leds, 3*NUM_LEDS, NUM_LEDS);
-    // if (NUM_STRIPS >= 5) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_2, COLOR_ORDER>(__leds, 4*NUM_LEDS, NUM_LEDS);
-    // if (NUM_STRIPS >= 6) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_3, COLOR_ORDER>(__leds, 5*NUM_LEDS, NUM_LEDS);
-    // if (NUM_STRIPS >= 7) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_7, COLOR_ORDER>(__leds, 6*NUM_LEDS, NUM_LEDS);
-    // if (NUM_STRIPS >= 8) FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_8, COLOR_ORDER>(__leds, 7*NUM_LEDS, NUM_LEDS);
 
     FastLED.setCorrection(TypicalLEDStrip);
     FastLED.setBrightness(DEFAULT_BRIGHTNESS);
@@ -340,7 +283,6 @@ void hl_loop() {
 
     // Main pattern loop.
     {
-        CheckAndProcessMIDI();
         PatternProcessor();
         //PatternPostProcessor();
 
@@ -377,8 +319,6 @@ void hl_loop() {
     }
 
     int32_t sleep_usec = std::max(0, std::max(1, loop_delay) * 1000 - delta_usec);
-
-    // Removed is_fps_debug handling.
 
     // Note: documentation says not to set long waits with delayMicroseconds
     delayMicroseconds(sleep_usec % 1000);

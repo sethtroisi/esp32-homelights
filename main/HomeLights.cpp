@@ -191,12 +191,113 @@ static bool next_button_debounced(void)
 
 //--------------------------------------------------------------------------||
 
+// MPR121 stuff
+#include "mpr121.h"
+
+MPR121_t cap_sensor;
+void capSensorSetup() {
+    uint16_t touchThreshold = 40;
+	uint16_t releaseThreshold = 20;
+
+	ESP_LOGI(TAG, "CONFIG_I2C_ADDRESS=0x%X", CONFIG_I2C_ADDRESS);
+	ESP_LOGI(TAG, "CONFIG_SCL_GPIO=%d", CONFIG_SCL_GPIO);
+	ESP_LOGI(TAG, "CONFIG_SDA_GPIO=%d", CONFIG_SDA_GPIO);
+	ESP_LOGI(TAG, "CONFIG_IRQ_GPIO=%d", CONFIG_IRQ_GPIO);
+
+ 	bool ret = MPR121_begin(&cap_sensor, CONFIG_I2C_ADDRESS, touchThreshold, releaseThreshold, CONFIG_IRQ_GPIO, CONFIG_SDA_GPIO, CONFIG_SCL_GPIO);
+ 	ESP_LOGI(TAG, "MPR121_begin=%d", ret);
+
+	if (ret == false) {
+		switch (MPR121_getError(&cap_sensor)) {
+			case NO_ERROR:
+				ESP_LOGE(TAG, "no error");
+				break;
+			case ADDRESS_UNKNOWN:
+				ESP_LOGE(TAG, "incorrect address");
+				break;
+			case READBACK_FAIL:
+				ESP_LOGE(TAG, "readback failure");
+				break;
+			case OVERCURRENT_FLAG:
+				ESP_LOGE(TAG, "overcurrent on REXT pin");
+				break;
+			case OUT_OF_RANGE:
+				ESP_LOGE(TAG, "electrode out of range");
+				break;
+			case NOT_INITED:
+				ESP_LOGE(TAG, "not initialised");
+				break;
+			default:
+				ESP_LOGE(TAG, "unknown error");
+				break;
+		}
+		while(1) {
+			vTaskDelay(1);
+		}
+	}
+
+
+#if 0
+	MPR121_setTouchThresholdAll(&cap_sensor, 40);	// this is the touch threshold - setting it low makes it more like a proximity trigger, default value is 40 for touch
+	MPR121_setReleaseThresholdAll(&cap_sensor, 20);	// this is the release threshold - must ALWAYS be smaller than the touch threshold, default value is 20 for touch
+#endif
+
+
+	MPR121_setFFI(&cap_sensor, FFI_10); // AFE Configuration 1
+	MPR121_setSFI(&cap_sensor, SFI_10); // AFE Configuration 2
+	MPR121_setGlobalCDT(&cap_sensor, CDT_4US);  // reasonable for larger capacitances
+	MPR121_autoSetElectrodesDefault(&cap_sensor, true);	// autoset all electrode settings
+}
+
+void checkCapSensorPattern() {
+	MPR121_updateAll(&cap_sensor);
+	for (int i = 0; i < 12; i++) {
+		if (MPR121_isNewTouch(&cap_sensor, i)) {
+			ESP_LOGI(TAG, "electrode %d was just touched", i);
+		} else if (MPR121_isNewRelease(&cap_sensor, i)) {
+			ESP_LOGI(TAG, "electrode %d was just released", i);
+		}
+	}
+
+    // Check total number of buttons pressed
+    uint8_t count = 0;
+    for (uint i = 0; i < 12; i++) {
+        count += MPR121_getTouchData(&cap_sensor, i);
+    }
+
+    if (count == 2) {
+        // Pairs
+        if (cap_sensor.touchData == 0b100000000001) {
+            loadMIDIEffects(1);
+        }
+        if (cap_sensor.touchData == 0b010000000010) {
+            loadMIDIEffects(2);
+        }
+        if (cap_sensor.touchData == 0b001000000100) {
+            loadMIDIEffects(3);
+        }
+        if (cap_sensor.touchData == 0b000100001000) {
+            loadMIDIEffects(6);
+        }
+        if (cap_sensor.touchData == 0b000010010000) {
+            loadMIDIEffects(7);
+        }
+        if (cap_sensor.touchData == 0b000001100000) {
+
+            loadMIDIEffects(9);
+        }
+    }
+
+}
+
+
 //--------------------------------------------------------------------------||
 
 
 void hl_setup() {
    enable_converter();
    configure_manual_button();
+   //capSensorSetup();
 
     /**
      * v0 PCB layout was
@@ -258,144 +359,77 @@ void hl_setup() {
 
 // Global ish debounce thing
 
-void hl_loop() {}
+
+#include "mpr121.h"
 
 
-// #include "mpr121.h"
 
-// void hl_loop() {
+void hl_loop() {
+    const float INVERSE_MICROS = 1e-6;
 
-// 	ESP_LOGI(TAG, "CONFIG_I2C_ADDRESS=0x%X", CONFIG_I2C_ADDRESS);
-// 	ESP_LOGI(TAG, "CONFIG_SCL_GPIO=%d", CONFIG_SCL_GPIO);
-// 	ESP_LOGI(TAG, "CONFIG_SDA_GPIO=%d", CONFIG_SDA_GPIO);
-// 	ESP_LOGI(TAG, "CONFIG_IRQ_GPIO=%d", CONFIG_IRQ_GPIO);
-// 	MPR121_t dev;
+    // interupts are disabled during FastLed.show() so we have to guess at timing
+    uint64_t write_usec_guess = guess_show_timing_usec();
 
-// 	uint16_t touchThreshold = 40;
-// 	uint16_t releaseThreshold = 20;
-// 	//uint16_t interruptPin = 4;
+    micros_last = micros_now;
+    micros_now = micros(); // 32 bit => overflows every hour!
 
-// 	bool ret = MPR121_begin(&dev, CONFIG_I2C_ADDRESS, touchThreshold, releaseThreshold, CONFIG_IRQ_GPIO, CONFIG_SDA_GPIO, CONFIG_SCL_GPIO);
-// 	ESP_LOGI(TAG, "MPR121_begin=%d", ret);
-// 	if (ret == false) {
-// 		switch (MPR121_getError(&dev)) {
-// 			case NO_ERROR:
-// 				ESP_LOGE(TAG, "no error");
-// 				break;
-// 			case ADDRESS_UNKNOWN:
-// 				ESP_LOGE(TAG, "incorrect address");
-// 				break;
-// 			case READBACK_FAIL:
-// 				ESP_LOGE(TAG, "readback failure");
-// 				break;
-// 			case OVERCURRENT_FLAG:
-// 				ESP_LOGE(TAG, "overcurrent on REXT pin");
-// 				break;
-// 			case OUT_OF_RANGE:
-// 				ESP_LOGE(TAG, "electrode out of range");
-// 				break;
-// 			case NOT_INITED:
-// 				ESP_LOGE(TAG, "not initialised");
-// 				break;
-// 			default:
-// 				ESP_LOGE(TAG, "unknown error");
-// 				break;
-// 		}
-// 		while(1) {
-// 			vTaskDelay(1);
-// 		}
-// 	}
+    if (global_tDelta < 0) global_tDelta = INVERSE_MICROS;
 
+    //checkCapSensorPattern();
 
-// #if 0
-// 	MPR121_setTouchThresholdAll(&dev, 40);	// this is the touch threshold - setting it low makes it more like a proximity trigger, default value is 40 for touch
-// 	MPR121_setReleaseThresholdAll(&dev, 20);	// this is the release threshold - must ALWAYS be smaller than the touch threshold, default value is 20 for touch
-// #endif
+    // Check for manual pattern advance.
+    if (next_button_debounced()) {
+        blink_onboard_led(50);
 
+        //RefreshLastUpdate();
+        // -1 => Next pattern (including blanks)
+        loadMIDIEffects(-1);
+        last_update_button_t = millis();
+    }
 
-// 	MPR121_setFFI(&dev, FFI_10); // AFE Configuration 1
-// 	MPR121_setSFI(&dev, SFI_10); // AFE Configuration 2
-// 	MPR121_setGlobalCDT(&dev, CDT_4US);  // reasonable for larger capacitances
-// 	MPR121_autoSetElectrodesDefault(&dev, true);	// autoset all electrode settings
+    // Main pattern loop.
+    {
+        PatternProcessor();
+        //PatternPostProcessor();
 
+        // // Set 0th LED to let us know this is working
+        // setPixel(0, ColorMap(256 * global_frames, 3));
 
-// 	while(1) {
-// 		MPR121_updateAll(&dev);
-// 		for (int i = 0; i < 12; i++) {
-// 			if (MPR121_isNewTouch(&dev, i)) {
-// 				ESP_LOGI(TAG, "electrode %d was just touched", i);
-// 			} else if (MPR121_isNewRelease(&dev, i)) {
-// 				ESP_LOGI(TAG, "electrode %d was just released", i);
-// 			}
-// 		}
-// 		vTaskDelay(10);
-// 	}
-// }
+        // // Set 1st LED to let us see MIDI events being processed
+        // setPixel(1, ColorMap(256 * global_MIDI_count, 3));
 
-// void hl_loop() {
-//     const float INVERSE_MICROS = 1e-6;
+        // Turn of the "extra" LEDs. This keeps them from occasionally becoming a color
+        for (uint32_t i = NUM_LEDS; i < MAX_NUM_LEDS; i++)
+            setPixel(i, CRGB::Black);
 
-//     // interupts are disabled during FastLed.show() so we have to guess at timing
-//     uint64_t write_usec_guess = guess_show_timing_usec();
+        showStrips();
+    }
 
-//     micros_last = micros_now;
-//     micros_now = micros(); // 32 bit => overflows every hour!
+    uint64_t micros_after = micros();
+    if (micros_after < micros_now) { // overflow happened
+        micros_after += (1LL << 32);
+    }
 
-//     if (global_tDelta < 0) global_tDelta = INVERSE_MICROS;
+    int32_t delta_usec = (micros_after - micros_now);
+    if (delta_usec < write_usec_guess) {
+        // FastLED disables interupts so micros & millis doesn't work.
+        delta_usec += write_usec_guess;
+    }
 
-//     // Check for manual pattern advance.
-//     if (next_button_debounced()) {
-//         blink_onboard_led(50);
+    global_t = micros_now * INVERSE_MICROS;
+    // Broken if interupts are disabled and micros isn't updated
+    global_tDelta = (micros_now - micros_last) * INVERSE_MICROS;
 
-//         //RefreshLastUpdate();
-//         // -1 => Next pattern (including blanks)
-//         loadMIDIEffects(-1);
-//         last_update_button_t = millis();
-//     }
+    if (global_frames % 200 == 0) {
+        ESP_LOGI(TAG, "%d | %llu => Pattern %d (%llu)", global_frames, micros_now, current_pattern, micros_after - micros_now);
+    }
 
-//     // Main pattern loop.
-//     {
-//         PatternProcessor();
-//         //PatternPostProcessor();
+    int32_t sleep_usec = std::max(0, std::max(1, loop_delay) * 1000 - delta_usec);
 
-//         // // Set 0th LED to let us know this is working
-//         // setPixel(0, ColorMap(256 * global_frames, 3));
-
-//         // // Set 1st LED to let us see MIDI events being processed
-//         // setPixel(1, ColorMap(256 * global_MIDI_count, 3));
-
-//         // Turn of the "extra" LEDs. This keeps them from occasionally becoming a color
-//         for (uint32_t i = NUM_LEDS; i < MAX_NUM_LEDS; i++)
-//             setPixel(i, CRGB::Black);
-
-//         showStrips();
-//     }
-
-//     uint64_t micros_after = micros();
-//     if (micros_after < micros_now) { // overflow happened
-//         micros_after += (1LL << 32);
-//     }
-
-//     int32_t delta_usec = (micros_after - micros_now);
-//     if (delta_usec < write_usec_guess) {
-//         // FastLED disables interupts so micros & millis doesn't work.
-//         delta_usec += write_usec_guess;
-//     }
-
-//     global_t = micros_now * INVERSE_MICROS;
-//     // Broken if interupts are disabled and micros isn't updated
-//     global_tDelta = (micros_now - micros_last) * INVERSE_MICROS;
-
-//     if (global_frames % 200 == 0) {
-//         ESP_LOGI(TAG, "%d | %llu => Pattern %d (%llu)", global_frames, micros_now, current_pattern, micros_after - micros_now);
-//     }
-
-//     int32_t sleep_usec = std::max(0, std::max(1, loop_delay) * 1000 - delta_usec);
-
-//     // Note: documentation says not to set long waits with delayMicroseconds
-//     delayMicroseconds(sleep_usec % 1000);
-//     delay(sleep_usec / 1000);
-// }
+    // Note: documentation says not to set long waits with delayMicroseconds
+    delayMicroseconds(sleep_usec % 1000);
+    delay(sleep_usec / 1000);
+}
 
 
 //--------------------------------------------------------------------------||

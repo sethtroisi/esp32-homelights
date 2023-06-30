@@ -420,9 +420,9 @@ void hl_setup() {
 #define DATA_PIN GPIO_NUM_32
 #define CLK_PIN GPIO_NUM_33
 
-    FastLED.addLeds<WS2812B, GPIO_NUM_33, COLOR_ORDER>(__leds, NUM_LEDS);
+    FastLED.addLeds<WS2812B, GPIO_NUM_33, EOrder::RGB>(__leds, NUM_LEDS);
 
-    FastLED.addLeds<ESPIChipsets::APA102, DATA_PIN, CLK_PIN, EOrder::RGB, DATA_RATE_MHZ(25)>(__leds, NUM_LEDS);
+    //FastLED.addLeds<ESPIChipsets::APA102, DATA_PIN, CLK_PIN, EOrder::GRB, DATA_RATE_MHZ(25)>(__leds, NUM_LEDS);
 
     FastLED.setCorrection(TypicalLEDStrip);
     //FastLED.setBrightness(DEFAULT_BRIGHTNESS);
@@ -437,21 +437,14 @@ void hl_setup() {
     // Default pattern to run.
     //ProcessCommand(DEFAULT_PATTERN);
 
-    const CRGB test[] = {    CRGB::Red,    CRGB::Blue,    CRGB::Green, CRGB::BurlyWood };
-
-    // uint16_t test2[36];
-    // for (int i = 0; i < 6; i++) {
-    //     for (int j = 0; j < 6; j++) {
-    //         test2[6 * i + j] = 8 * (j + 1) + (i + 1);
-    //     }
-    // }
-
+    /*
     uint32_t c = 0;
     while(1) {
         for (int32_t iters = 1000; iters < 10000; iters += 1000) {
 //            setStrip(CRGB::Black);
 
             auto before = micros();
+
             for (int i = 0; i < iters; i++) {
                 int16_t p = i % NUM_LEDS;
 //                __leds[p] = test[(i >> 8) & 3]; //ColorMap(c += 16, 0);
@@ -461,11 +454,11 @@ void hl_setup() {
 //                }
 
                 //int16_t p = test2[i % (sizeof(test2) / sizeof(test2[0]))];
-                __leds[p] = ColorMap((4 * 255 * p)  + (c += 32), 0);
+                __leds[p] = ColorMap((96 * p)  + (c += 8), 0);
 
 
                 //FastLED[0].showLeds(global_brightness);
-                FastLED.show(128);
+                FastLED.show(255);
 
 //                __leds[(i - 5) % NUM_LEDS] = CRGB::Black;
 //                delay(1);
@@ -475,6 +468,23 @@ void hl_setup() {
             ESP_LOGI(TAG, "%u iters took %lu (%lu per) -> FPS %.2f (%u)", iters, delta, delta / iters, 1e6 * iters / delta, c);
         }
     }
+    */
+
+    /*
+    uint32_t c = 0;
+    uint64_t rng = 0;
+    while (1) {
+        rng = (rng * 134775813 + 1);
+        uint32_t prng = rng >> 32;
+        for (int i = 0; i < NUM_LEDS; i++) {
+            // Want only 1/8th of LEDS on
+            bool on = (prng & 0b11100) == (i & 0b11100);
+            __leds[i] = !on ? CRGB::Black : ColorMap((8 * 255 * i)  + (c += 2), 0);
+        }
+        FastLED.show(255);
+        delay(250);
+    }
+    */
 
 
     // Load Twinkle Midi

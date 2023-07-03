@@ -35,6 +35,8 @@ using std::string;
 
 // All sorts of things about current pattern, number of leds, ...
 #include "globals.h"
+
+// Including this breaks everything maybe because of double includes in different compulation units or something
 //#include "tweaks.h"
 
 
@@ -54,6 +56,8 @@ using std::string;
 //#define BLINK_GPIO 2
 
 #define USE_SERIAL  1
+
+#define CAP_SENSOR_CODE 1
 
 static const char *TAG = "HomeLights";
 
@@ -96,7 +100,7 @@ void FASTLED_safe_show() {
 //--------------------------------------------------------------------------||
 
 // SN74HCT245 OUTPUT_ENABLE, active_low
-#define LIGHTS_DISABLE_PIN GPIO_NUM_15
+//#define LIGHTS_DISABLE_PIN GPIO_NUM_15
 #define ONBOARD_LED_PIN GPIO_NUM_2
 
 static void blink_onboard_led(uint16_t duration_millis) {
@@ -112,10 +116,8 @@ static void enable_converter() {
     // Onboard LED
 
     gpio_set_direction(ONBOARD_LED_PIN, GPIO_MODE_OUTPUT);
-    for (int i = 0; i < 5; i++) {
-        blink_onboard_led(100);
-    }
 
+/*
     {
         const bool disable_lights = 0;
         gpio_reset_pin(LIGHTS_DISABLE_PIN);
@@ -127,6 +129,7 @@ static void enable_converter() {
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
     }
+*/
 }
 
 // D2 is connected to onboard LED which could be fun (if I pulled it high?)
@@ -199,19 +202,27 @@ static bool next_button_debounced(void)
 MPR121_t cap_sensor_a;
 MPR121_t cap_sensor_b;
 
-void capSensorSetup(MPR121_t& cap_sensor, int16_t i2c_addr) {
-    uint16_t touchThreshold = 40;
-	uint16_t releaseThreshold = 20;
+bool capSensorSetup(MPR121_t& cap_sensor, int16_t i2c_addr) {
+    const uint16_t touchThreshold = 40;
+	const uint16_t releaseThreshold = 20;
+
+    static const char *TAG = "MPR121";
 
 	ESP_LOGI(TAG, "CONFIG_I2C_ADDRESS=0x%X", i2c_addr);
 	ESP_LOGI(TAG, "CONFIG_SCL_GPIO=%d", CONFIG_SCL_GPIO);
 	ESP_LOGI(TAG, "CONFIG_SDA_GPIO=%d", CONFIG_SDA_GPIO);
 	ESP_LOGI(TAG, "CONFIG_IRQ_GPIO=%d", CONFIG_IRQ_GPIO);
 
- 	bool ret = MPR121_begin(&cap_sensor, i2c_addr, touchThreshold, releaseThreshold, CONFIG_IRQ_GPIO, CONFIG_SDA_GPIO, CONFIG_SCL_GPIO);
- 	ESP_LOGI(TAG, "MPR121_begin=%d", ret);
+ 	bool success = MPR121_begin(&cap_sensor, i2c_addr, touchThreshold, releaseThreshold, CONFIG_IRQ_GPIO, CONFIG_SDA_GPIO, CONFIG_SCL_GPIO);
+ 	ESP_LOGI(TAG, "MPR121_begin=%d", success);
 
-	if (ret == false) {
+
+    if (success) {
+        MPR121_setFFI(&cap_sensor, FFI_10); // AFE Configuration 1
+        MPR121_setSFI(&cap_sensor, SFI_10); // AFE Configuration 2
+        MPR121_setGlobalCDT(&cap_sensor, CDT_4US);  // reasonable for larger capacitances
+        MPR121_autoSetElectrodesDefault(&cap_sensor, true);	// autoset all electrode settings
+    } else {
 		switch (MPR121_getError(&cap_sensor)) {
 			case NO_ERROR:
 				ESP_LOGE(TAG, "no error");
@@ -235,30 +246,28 @@ void capSensorSetup(MPR121_t& cap_sensor, int16_t i2c_addr) {
 				ESP_LOGE(TAG, "unknown error");
 				break;
 		}
-		while(1) {
-			vTaskDelay(1);
-		}
 	}
-
 
 #if 0
 	MPR121_setTouchThresholdAll(&cap_sensor, 40);	// this is the touch threshold - setting it low makes it more like a proximity trigger, default value is 40 for touch
 	MPR121_setReleaseThresholdAll(&cap_sensor, 20);	// this is the release threshold - must ALWAYS be smaller than the touch threshold, default value is 20 for touch
 #endif
 
-
-	MPR121_setFFI(&cap_sensor, FFI_10); // AFE Configuration 1
-	MPR121_setSFI(&cap_sensor, SFI_10); // AFE Configuration 2
-	MPR121_setGlobalCDT(&cap_sensor, CDT_4US);  // reasonable for larger capacitances
-	MPR121_autoSetElectrodesDefault(&cap_sensor, true);	// autoset all electrode settings
+    return success;
 }
 
 
-void flashColorSync(uint32_t color, uint32_t time_ms) {
+
+void flashColorSync(CRGB color, uint32_t time_ms) {
     // Backup __leds
     memcpy(__leds2, __leds, sizeof(__leds));
 
-    setStrip(color);
+    // setStrip(color);
+    // Testing a smaller
+    for (int i = color.getParity(); i < NUM_LEDS; i += 4) {
+        setPixel(i, color);
+    }
+
     showStrips();
 
     // Restore __leds
@@ -267,37 +276,42 @@ void flashColorSync(uint32_t color, uint32_t time_ms) {
     delay(time_ms);
 }
 
-void SetRippleEffect(uint32_t color, float motion_speed, float density) {
-    flashColorSync(color, 100);
+void SetRippleEffect(Pattern pattern, CRGB color, float motion_speed, float density) {
+    ESP_LOGI(TAG, "New effect with r=%2d, g=%2d, b=%2d | speed=%.2f, density=%.2f",
+        color.r, color.g, color.b, motion_speed, density);
+
+    // TODO check with Loren if we want / don't want this
+    if (color != color_a) {
+        flashColorSync(color, 150);
+    }
+
+    // TODO do something to handle color = 4 -> special
 
     color_a = color;
 
     // TODO test plumbing of motion_speed & density
- //   RIPPLE_DRIFT_SPEED = motion_speed;
- //   RIPPLE_DENSITY = density;
-    ProcessCommand("WAVING");
+    //RIPPLE_DRIFT_SPEED = motion_speed;
+    //RIPPLE_DENSITY = density;
+    // Non of these require setting other params so we can directly set current_pattern
+    current_pattern = pattern;
 }
 
 void checkCapSensorPattern() {
-
 	MPR121_updateAll(&cap_sensor_a);
 	MPR121_updateAll(&cap_sensor_b);
 
-	for (int i = 0; i < 23; i++) {
-        MPR121_t *ptr = (i < 12) ? &cap_sensor_a : &cap_sensor_b;
-		if (MPR121_isNewTouch(ptr, i % 12)) {
-			ESP_LOGI(TAG, "electrode %d was just touched", i);
-		} else if (MPR121_isNewRelease(ptr, i % 12)) {
-			ESP_LOGI(TAG, "electrode %d was just released", i);
+    const uint16_t NUM_SENSORS = 24;
+    const uint16_t SENSORS_PER = 12;
+
+	for (int i = 0; i < NUM_SENSORS; i++) {
+        MPR121_t *ptr = (i < SENSORS_PER) ? &cap_sensor_a : &cap_sensor_b;
+        int s = i % SENSORS_PER;
+		if (MPR121_isNewTouch(ptr, s)) {
+			ESP_LOGI(TAG, "electrode %d(%d) was just touched", s, i);
+		} else if (MPR121_isNewRelease(ptr, s)) {
+			ESP_LOGI(TAG, "electrode %d(%d) was just released", s, i);
 		}
 	}
-
-    // Check total number of buttons pressed
-    uint8_t count = 0;
-    for (uint i = 0; i < 12; i++) {
-        count += MPR121_getTouchData(&cap_sensor_a, i);
-        count += MPR121_getTouchData(&cap_sensor_b, i);
-    }
 
     /*
      * Logic is
@@ -315,58 +329,78 @@ void checkCapSensorPattern() {
      *          Ombre Rippling patterns with wind?
      */
 
-    uint32_t last_data = cap_sensor_a.lastTouchData | (((uint32_t) cap_sensor_b.lastTouchData) << 12);
-    uint32_t cur_data = cap_sensor_a.touchData | (((uint32_t) cap_sensor_b.touchData) << 12);
+    uint32_t last_data = cap_sensor_a.lastTouchData | (((uint32_t) cap_sensor_b.lastTouchData) << SENSORS_PER);
+    uint32_t cur_data = cap_sensor_a.touchData | (((uint32_t) cap_sensor_b.touchData) << SENSORS_PER);
 
-    // Find if any extra are pressed
-    uint32_t new_data = cur_data - (last_data & cur_data);
-
-    if (new_data) {
-        uint32_t flash_color =
-            (new_data & 0x0003) ? CRGB::Blue :
-                ((new_data & 0x000C) ? CRGB::Red :
-                    ((new_data & 0x0030) ? CRGB::Green : CRGB::White));
-
-        flash_color = blend(flash_color, CRGB::Black, 64);
-        flashColorSync(flash_color, 100);
+    // Don't do anything if current = last
+    if (last_data == cur_data) {
+        return;
     }
 
+    // Check total number of buttons pressed
+    uint8_t count = 0;
+    for (uint i = 0; i < NUM_SENSORS; i++) {
+        count += (cur_data >> i) & 1;
+    }
+
+    {
+        // Find if any extra are pressed
+        uint32_t new_data = cur_data - (last_data & cur_data);
+        if (new_data) {
+            uint8_t which = new_data | (new_data >> SENSORS_PER);
+            CRGB flash_color =
+                (new_data & 0b0001) ? ELEMENT_COLORS[0] :
+                    (new_data & 0b0010) ? ELEMENT_COLORS[1] :
+                        (new_data & 0b0100) ? ELEMENT_COLORS[2] :
+                            (new_data & 0b1000) ? ELEMENT_COLORS[3] : CRGB::Purple;
+
+            ESP_LOGI(TAG, "new_data: %x -> CRGB(%2d,%2d,%2d)", new_data, flash_color.r, flash_color.g, flash_color.b);
+            flash_color = blend(flash_color, CRGB::Black, 64);
+            flashColorSync(flash_color, 100);
+        }
+    }
+
+    uint8_t sensor_pairs = cur_data & (cur_data >> SENSORS_PER);
+    if (count > 0 && cur_data != last_data) {
+        ESP_LOGI(TAG, "cur=0x%x count=%d | sensor_pairs=0x%x", cur_data, count, sensor_pairs);
+    }
 
     if (count == 2) {
         last_update_t = millis();
         // Pairs
-        if (new_data == 0x0003) { /* Water */ SetRippleEffect(CRGB::Blue,  1.5, 1.0); }
-        if (new_data == 0x000C) { /* Fire  */ SetRippleEffect(CRGB::Red,   3,   0.4); }
-        if (new_data == 0x0030) { /* Earth */ SetRippleEffect(CRGB::Green, 0.5, 1.0); }
-        if (new_data == 0x00C0) { /* Air   */ SetRippleEffect(CRGB::White, 2,   0.7); }
+        if (sensor_pairs == 0b00000001) { /* Water */ SetRippleEffect(WAVING, ELEMENT_COLORS[0], 1.5,    1.0); }
+        if (sensor_pairs == 0b00000010) { /* Fire  */ SetRippleEffect(WAVING, ELEMENT_COLORS[1], 3,      0.4); }
+        if (sensor_pairs == 0b00000100) { /* Earth */ SetRippleEffect(WAVING, ELEMENT_COLORS[2], 0.5,    1.0); }
+        if (sensor_pairs == 0b00001000) { /* Air   */ SetRippleEffect(WAVING, ELEMENT_COLORS[3], 2,      0.7); }
 
-        if (new_data == 0x0300) {
+        if (sensor_pairs == 0b00010000) {
+            /* Rainbow */
+            ProcessCommand("RAINBOW");
+        }
+
+        if (sensor_pairs == 0b00100000) {
             /* Snake, using last color */
             for (int strip_i = 0; strip_i < NUM_STRIPS; strip_i++)
                 snake_colors[strip_i] = color_a;
             ProcessCommand("SNAKE");
         }
-        if (new_data == 0x0C00) {
-            /* Twinkle */
+        if (sensor_pairs == 0b01000000) {
+            /* Sparkles / Twinkle */
             // TODO XXX see if this can interact with past pattern by fading it down slowly?
             ProcessCommand("TWINKLE");
         }
-        if (new_data == 0x3000) {
-            /* Rainbow */
-            ProcessCommand("RAINBOW");
-        }
 
-    } else if (new_data == 0b01010101) {
+    } else if (cur_data == 0xF) {
             // TODO only forward
             /* Four Left */
-            SetRippleEffect(0, 0.5, 1.0);
-    } else if (new_data == 0b10101010) {
+            SetRippleEffect(WAVING_SEGMENTS_1, CRGB::Black, 0.5,  1.0);
+    } else if (cur_data == (0xF << SENSORS_PER)) {
             // TODO only backwards
             /* Four Right */
-            SetRippleEffect(0, -0.5, 1.0);
-    } else if (new_data == 0xFF) {
+            SetRippleEffect(WAVING_SEGMENTS_1, CRGB::Black, -0.5, 1.0);
+    } else if (sensor_pairs == 0b00001111) {
             /* All Eight */
-            SetRippleEffect(0, -0.5, 1.0);
+            SetRippleEffect(WAVING_SEGMENTS_2, CRGB::Black, -0.5, 1.0);
     }
 }
 
@@ -375,12 +409,24 @@ void checkCapSensorPattern() {
 
 
 void hl_setup() {
-   ESP_LOGI(TAG, "hl setup");
-   enable_converter();
-   configure_manual_button();
+    ESP_LOGI(TAG, "hl setup");
+    enable_converter();
+    configure_manual_button();
 
-   //capSensorSetup(cap_sensor_a, CONFIG_I2C_ADDRESS);
-   //capSensorSetup(cap_sensor_b, CONFIG_I2C_ADDRESS + 1);
+#if CAP_SENSOR_CODE
+    bool success = (
+        capSensorSetup(cap_sensor_a, CONFIG_I2C_ADDRESS + 1) &&
+        capSensorSetup(cap_sensor_b, CONFIG_I2C_ADDRESS)
+    );
+
+    while (!success) {
+        ESP_LOGI(TAG, "bad init");
+        // Blink LEDs as error
+        blink_onboard_led(100);
+    }
+#endif
+
+    for (int i = 0; i < 5; i++) blink_onboard_led(100);
 
     /**
      * v0 PCB layout was
@@ -420,7 +466,8 @@ void hl_setup() {
 #define DATA_PIN GPIO_NUM_32
 #define CLK_PIN GPIO_NUM_33
 
-    FastLED.addLeds<WS2812B, GPIO_NUM_33, EOrder::RGB>(__leds, NUM_LEDS);
+    // +3 means that we write 3 extra (black) LEDs each time
+    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_19, COLOR_ORDER>(__leds, NUM_LEDS + 3);
 
     //FastLED.addLeds<ESPIChipsets::APA102, DATA_PIN, CLK_PIN, EOrder::GRB, DATA_RATE_MHZ(25)>(__leds, NUM_LEDS);
 
@@ -484,18 +531,12 @@ void hl_setup() {
         FastLED.show(255);
         delay(250);
     }
-    */
+//    */
 
 
     // Load Twinkle Midi
-    loadMIDIEffects(0);
+    ProcessCommand(DEFAULT_PATTERN);
 }
-
-// Global ish debounce thing
-
-
-#include "mpr121.h"
-
 
 
 void hl_loop() {
@@ -509,7 +550,9 @@ void hl_loop() {
 
     if (global_tDelta < 0) global_tDelta = INVERSE_MICROS;
 
-    //checkCapSensorPattern();
+#if CAP_SENSOR_CODE
+    checkCapSensorPattern();
+#endif
 
     // Check for manual pattern advance.
     if (next_button_debounced()) {
@@ -521,6 +564,27 @@ void hl_loop() {
         last_update_t = millis();
         //last_update_button_t = millis();
     }
+
+    // After 20-30 seconds (or 2 minutes if the button was manually changed) go back to single waiting pattern
+    uint32_t update_millis_a = millis() - last_update_t;
+    //uint32_t update_millis_b = max(millis() - last_update_button_t;
+
+    if (update_millis_a > 40 * 1000 && current_pattern != OMBRE) {
+        // Back to the default pattern
+        ProcessCommand(DEFAULT_PATTERN);
+        global_s = 64;
+    }
+
+    /*
+    if (update_millis_a > (6 * 3600 * 1000)) {
+        // After 2 hours change to BLACK;
+        current_pattern = NONE;
+        active_strips = ALL_STRIPS;
+        global_brightness = DEFAULT_BRIGHTNESS;
+        clearLonger();
+        last_update_t = millis();
+    }
+    */
 
     // Main pattern loop.
     {

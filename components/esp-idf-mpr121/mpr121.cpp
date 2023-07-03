@@ -58,6 +58,7 @@
 #define I2C_NUM I2C_NUM_0
 //#define I2C_NUM I2C_NUM_1
 
+// SETH DO I NEED TO LOWER THIS FOR LONGER CABLES?
 #define I2C_MASTER_FREQ_HZ 400000 /*!< I2C master clock frequency. no higher than 1MHz for now */
 
 static const char *TAG = "MPR121";
@@ -120,6 +121,8 @@ void MPR121_setRegister(MPR121_t * dev, uint8_t reg, uint8_t value){
 	if(wasRunning) MPR121_run(dev);		// restore run mode if necessary
 }
 
+
+int total_errors_logging = 0;
 uint8_t MPR121_getRegister(MPR121_t * dev, uint8_t reg){
 	ESP_LOGD(TAG, "getRegister reg=0x%02x", reg);
 	uint8_t scratch = 0;
@@ -157,7 +160,9 @@ uint8_t MPR121_getRegister(MPR121_t * dev, uint8_t reg){
 		scratch = buf[0];
 		ESP_LOGD(TAG, "getRegister reg=0x%02x successfully scratch=0x%02x", reg, scratch);
 	} else {
-		ESP_LOGE(TAG, "getRegister reg=0x%02x failed. code: 0x%02x", reg, espRc);
+		// TODO try to log with less frequency
+		if (total_errors_logging++ < 10)
+			ESP_LOGE(TAG, "getRegister reg=0x%02x failed. code: 0x%02x", reg, espRc);
 		dev->error |= 1<<ADDRESS_UNKNOWN_BIT; // set address unknown bit
 	}
 	i2c_cmd_link_delete(cmd);
@@ -219,19 +224,26 @@ bool MPR121_begin(MPR121_t * dev, int16_t address, int16_t touchThreshold, int16
 	Wire.begin();
 #endif
 
-	i2c_config_t i2c_config = {
-		.mode = I2C_MODE_MASTER,
-		.sda_io_num = sda,
-		.scl_io_num = scl,
-		.sda_pullup_en = GPIO_PULLUP_ENABLE,
-		.scl_pullup_en = GPIO_PULLUP_ENABLE,
-		.master {.clk_speed = I2C_MASTER_FREQ_HZ},
-		.clk_flags = 0,
-	};
-	ESP_ERROR_CHECK(i2c_param_config(I2C_NUM, &i2c_config));
-	auto error = i2c_driver_install(I2C_NUM, I2C_MODE_MASTER, 0, 0, 0);
-    ESP_LOGI(TAG, "i2c_driver_install=%d", error);
+	// SETH TODO maybe only need to do this once?
+	static bool any_init = false;
+	if (!any_init) {
+		any_init = true;
+		i2c_config_t i2c_config = {
+			.mode = I2C_MODE_MASTER,
+			.sda_io_num = sda,
+			.scl_io_num = scl,
+			.sda_pullup_en = GPIO_PULLUP_ENABLE,
+			.scl_pullup_en = GPIO_PULLUP_ENABLE,
+			.master {.clk_speed = I2C_MASTER_FREQ_HZ},
+			.clk_flags = 0,
+		};
+		ESP_ERROR_CHECK(i2c_param_config(I2C_NUM, &i2c_config));
+		auto error = i2c_driver_install(I2C_NUM, I2C_MODE_MASTER, 0, 0, 0);
+		ESP_LOGI(TAG, "i2c_driver_install=%d", error);
+	} else {
+		ESP_LOGI(TAG, "Skipping i2c_driver_install (SHOULD BE 2nd DEVICE)");
 
+	}
 
 	// addresses only valid 0x5A to 0x5D - if we don't change the address it stays at default
 	if(address>=0x5A && address<=0x5D)

@@ -262,11 +262,22 @@ void flashColorSync(CRGB color, uint32_t time_ms) {
     // Backup __leds
     memcpy(__leds2, __leds, sizeof(__leds));
 
-    // setStrip(color);
-    // Testing a smaller
-    for (int i = color.getParity(); i < NUM_LEDS; i += 4) {
-        setPixel(i, color);
+    if (color.r + color.g + color.b > 0) // (color != CRGB::Black)
+        setStrip(color);
+    else {
+        // Rainbow pattern via CRGB::Black
+        uint32_t color_mult = color_delta_mult * 16;
+
+        for (int led = 0; led < NUM_LEDS; led++) {
+            uint64_t temp = global_j + (color_mult * led / NUM_LEDS);
+            setPixel(led, ColorMap(temp, 0));
+        }
     }
+
+    // Testing a smaller
+    //for (int i = color.getParity(); i < NUM_LEDS; i += 4) {
+    //    setPixel(i, color);
+    //}
 
     showStrips();
 
@@ -280,13 +291,12 @@ void SetRippleEffect(Pattern pattern, CRGB color, float motion_speed, float dens
     ESP_LOGI(TAG, "New effect with r=%2d, g=%2d, b=%2d | speed=%.2f, density=%.2f",
         color.r, color.g, color.b, motion_speed, density);
 
-    // TODO check with Loren if we want / don't want this
-    if (color != color_a) {
-        flashColorSync(color, 150);
-    }
+    // Not needed because will have just pressed a new button and got flash from that?
+    //if (color != color_a && color != CRGB::Black) {
+    //    flashColorSync(color, 150);
+    //}
 
     // TODO do something to handle color = 4 -> special
-
     color_a = color;
 
     // TODO test plumbing of motion_speed & density
@@ -296,7 +306,7 @@ void SetRippleEffect(Pattern pattern, CRGB color, float motion_speed, float dens
     current_pattern = pattern;
 }
 
-void checkCapSensorPattern() {
+bool checkCapSensorPattern() {
 	MPR121_updateAll(&cap_sensor_a);
 	MPR121_updateAll(&cap_sensor_b);
 
@@ -334,7 +344,7 @@ void checkCapSensorPattern() {
 
     // Don't do anything if current = last
     if (last_data == cur_data) {
-        return;
+        return false;
     }
 
     // Check total number of buttons pressed
@@ -349,10 +359,11 @@ void checkCapSensorPattern() {
         if (new_data) {
             uint8_t which = new_data | (new_data >> SENSORS_PER);
             CRGB flash_color =
-                (new_data & 0b0001) ? ELEMENT_COLORS[0] :
-                    (new_data & 0b0010) ? ELEMENT_COLORS[1] :
-                        (new_data & 0b0100) ? ELEMENT_COLORS[2] :
-                            (new_data & 0b1000) ? ELEMENT_COLORS[3] : CRGB::Purple;
+                (which & 0b0001) ? ELEMENT_COLORS[0] :
+                    (which & 0b0010) ? ELEMENT_COLORS[1] :
+                        (which & 0b0100) ? ELEMENT_COLORS[2] :
+                            (which & 0b1000) ? ELEMENT_COLORS[3] :
+                                (which & 0b10000) ? CRGB::Black : CRGB::Purple;
 
             ESP_LOGI(TAG, "new_data: %x -> CRGB(%2d,%2d,%2d)", new_data, flash_color.r, flash_color.g, flash_color.b);
             flash_color = blend(flash_color, CRGB::Black, 64);
@@ -368,7 +379,11 @@ void checkCapSensorPattern() {
     if (count == 2) {
         last_update_t = millis();
         // Pairs
-        if (sensor_pairs == 0b00000001) { /* Water */ SetRippleEffect(WAVING, ELEMENT_COLORS[0], 1.5,    1.0); }
+        if (sensor_pairs == 0b00000001) {
+             /* Water */
+             //SetRippleEffect(WAVING, ELEMENT_COLORS[0], 1.5,    1.0);
+             ProcessCommand("OCEAN_WAVES");
+        }
         if (sensor_pairs == 0b00000010) { /* Fire  */ SetRippleEffect(WAVING, ELEMENT_COLORS[1], 3,      0.4); }
         if (sensor_pairs == 0b00000100) { /* Earth */ SetRippleEffect(WAVING, ELEMENT_COLORS[2], 0.5,    1.0); }
         if (sensor_pairs == 0b00001000) { /* Air   */ SetRippleEffect(WAVING, ELEMENT_COLORS[3], 2,      0.7); }
@@ -402,6 +417,8 @@ void checkCapSensorPattern() {
             /* All Eight */
             SetRippleEffect(WAVING_SEGMENTS_2, CRGB::Black, -0.5, 1.0);
     }
+
+    return true;
 }
 
 
@@ -533,11 +550,14 @@ void hl_setup() {
     }
 //    */
 
-
     // Load Twinkle Midi
     ProcessCommand(DEFAULT_PATTERN);
 }
 
+// Terrible globals for fade down and up
+uint64_t last_human_input_t = 0;
+uint8_t fade_stage = 0; // 0 nothing, 1 down, 2 up
+uint8_t pre_fade_brightness = 0;
 
 void hl_loop() {
     const float INVERSE_MICROS = 1e-6;
@@ -551,7 +571,9 @@ void hl_loop() {
     if (global_tDelta < 0) global_tDelta = INVERSE_MICROS;
 
 #if CAP_SENSOR_CODE
-    checkCapSensorPattern();
+    if (checkCapSensorPattern()) {
+        last_human_input_t = millis();
+    }
 #endif
 
     // Check for manual pattern advance.
@@ -561,18 +583,53 @@ void hl_loop() {
         //RefreshLastUpdate();
         // -1 => Next pattern (including blanks)
         loadMIDIEffects(-1);
-        last_update_t = millis();
-        //last_update_button_t = millis();
+        last_human_input_t = millis();
     }
 
-    // After 20-30 seconds (or 2 minutes if the button was manually changed) go back to single waiting pattern
-    uint32_t update_millis_a = millis() - last_update_t;
-    //uint32_t update_millis_b = max(millis() - last_update_button_t;
+    // After 30-50 seconds go back to DEFAULT pattern
+    int32_t no_update_millis = millis() - last_human_input_t;
+    bool no_recent_touches = (30 * 1000 < no_update_millis) && (current_pattern != OMBRE);
 
-    if (update_millis_a > 40 * 1000 && current_pattern != OMBRE) {
-        // Back to the default pattern
-        ProcessCommand(DEFAULT_PATTERN);
-        global_s = 64;
+    if (fade_stage == 0) {
+        if (no_recent_touches) {
+            ESP_LOGI(TAG, "Starting fade after %d with brightness = %d", no_update_millis, global_brightness);
+
+            fade_stage = 1;
+            // Fade to black, saving old brightness
+            pre_fade_brightness = global_brightness;
+        }
+    } else {
+        if (no_update_millis < 1000) {
+            ESP_LOGI(TAG, "Fade up recent press %d", no_update_millis);
+            // Start bring up immediately.
+            fade_stage = 2;
+            global_brightness = pre_fade_brightness;
+        }
+    }
+
+    if (fade_stage == 1) {
+        if ((global_brightness & 0b111) == 0)
+            ESP_LOGI(TAG, "Fade down @ %d", global_brightness);
+        if (global_brightness > 1) {
+            global_brightness -= (global_brightness >> 6);
+            if (global_brightness > 0)
+                global_brightness -= 1;
+            // Make this a little slower
+            delay(60);
+        } else {
+            fade_stage = 2;
+            ProcessCommand(DEFAULT_PATTERN);
+        }
+    } else if (fade_stage == 2) {
+        if ((global_brightness & 0b111) == 0)
+            ESP_LOGI(TAG, "Fade up @ %d/%d", global_brightness, pre_fade_brightness);
+        global_brightness += 1;
+        if (global_brightness >= pre_fade_brightness) {
+            global_brightness = pre_fade_brightness;
+            fade_stage = 0;
+        }
+        // Make this a little slower
+        delay(60);
     }
 
     /*

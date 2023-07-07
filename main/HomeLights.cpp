@@ -36,9 +36,7 @@ using std::string;
 // All sorts of things about current pattern, number of leds, ...
 #include "globals.h"
 
-// Including this breaks everything maybe because of double includes in different compulation units or something
-//#include "tweaks.h"
-
+#include "tweaks.h"
 
 #include "PatternRunner.h"
 
@@ -57,7 +55,7 @@ using std::string;
 
 #define USE_SERIAL  1
 
-#define CAP_SENSOR_CODE 1
+#define CAP_SENSOR_CODE 0
 
 static const char *TAG = "HomeLights";
 
@@ -100,7 +98,7 @@ void FASTLED_safe_show() {
 //--------------------------------------------------------------------------||
 
 // SN74HCT245 OUTPUT_ENABLE, active_low
-//#define LIGHTS_DISABLE_PIN GPIO_NUM_15
+#define LIGHTS_DISABLE_PIN GPIO_NUM_15
 #define ONBOARD_LED_PIN GPIO_NUM_2
 
 static void blink_onboard_led(uint16_t duration_millis) {
@@ -117,7 +115,6 @@ static void enable_converter() {
 
     gpio_set_direction(ONBOARD_LED_PIN, GPIO_MODE_OUTPUT);
 
-/*
     {
         const bool disable_lights = 0;
         gpio_reset_pin(LIGHTS_DISABLE_PIN);
@@ -129,7 +126,6 @@ static void enable_converter() {
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
     }
-*/
 }
 
 // D2 is connected to onboard LED which could be fun (if I pulled it high?)
@@ -274,11 +270,6 @@ void flashColorSync(CRGB color, uint32_t time_ms) {
         }
     }
 
-    // Testing a smaller
-    //for (int i = color.getParity(); i < NUM_LEDS; i += 4) {
-    //    setPixel(i, color);
-    //}
-
     showStrips();
 
     // Restore __leds
@@ -301,7 +292,7 @@ void SetRippleEffect(Pattern pattern, CRGB color, float motion_speed, float dens
 
     // TODO test plumbing of motion_speed & density
     //RIPPLE_DRIFT_SPEED = motion_speed;
-    //RIPPLE_DENSITY = density;
+    RIPPLE_DENSITY = min(1.0f, max(0.0f, density));
     // Non of these require setting other params so we can directly set current_pattern
     current_pattern = pattern;
 }
@@ -424,6 +415,7 @@ bool checkCapSensorPattern() {
 
 //--------------------------------------------------------------------------||
 
+bool cap_init_success = false;
 
 void hl_setup() {
     ESP_LOGI(TAG, "hl setup");
@@ -431,19 +423,19 @@ void hl_setup() {
     configure_manual_button();
 
 #if CAP_SENSOR_CODE
-    bool success = (
+    cap_init_success = (
         capSensorSetup(cap_sensor_a, CONFIG_I2C_ADDRESS + 1) &&
         capSensorSetup(cap_sensor_b, CONFIG_I2C_ADDRESS)
     );
 
-    while (!success) {
+    if (!cap_init_success) {
         ESP_LOGI(TAG, "bad init");
         // Blink LEDs as error
-        blink_onboard_led(100);
+        for (int i = 0; i < 5; i++) blink_onboard_led(200);
     }
 #endif
 
-    for (int i = 0; i < 5; i++) blink_onboard_led(100);
+    for (int i = 0; i < 20; i++) blink_onboard_led(10);
 
     /**
      * v0 PCB layout was
@@ -465,7 +457,7 @@ void hl_setup() {
      */
 
     NUM_LEDS = 64;
-    NUM_STRIPS = 1;
+    NUM_STRIPS = 7;
     assert(NUM_STRIPS <= MAX_NUM_STRIPS);
 
 #define DATA_PIN_CONN_1 32
@@ -480,12 +472,17 @@ void hl_setup() {
     // HACK FOR MOURNING OWL both strips are the "same"
     //FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_5, COLOR_ORDER>(__leds, NUM_LEDS);
     //FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_6, COLOR_ORDER>(__leds, NUM_LEDS);
-#define DATA_PIN GPIO_NUM_32
-#define CLK_PIN GPIO_NUM_33
 
-    // +3 means that we write 3 extra (black) LEDs each time
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_19, COLOR_ORDER>(__leds, NUM_LEDS + 3);
+    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_12, COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_14, COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_27, COLOR_ORDER>(__leds, 2 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_26, COLOR_ORDER>(__leds, 3 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_25, COLOR_ORDER>(__leds, 4 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_33, COLOR_ORDER>(__leds, 5 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_32, COLOR_ORDER>(__leds, 6 * MAX_NUM_LEDS, NUM_LEDS);
 
+//#define DATA_PIN GPIO_NUM_32
+//#define CLK_PIN GPIO_NUM_33
     //FastLED.addLeds<ESPIChipsets::APA102, DATA_PIN, CLK_PIN, EOrder::GRB, DATA_RATE_MHZ(25)>(__leds, NUM_LEDS);
 
     FastLED.setCorrection(TypicalLEDStrip);
@@ -499,58 +496,6 @@ void hl_setup() {
     delay(10);
 
     // Default pattern to run.
-    //ProcessCommand(DEFAULT_PATTERN);
-
-    /*
-    uint32_t c = 0;
-    while(1) {
-        for (int32_t iters = 1000; iters < 10000; iters += 1000) {
-//            setStrip(CRGB::Black);
-
-            auto before = micros();
-
-            for (int i = 0; i < iters; i++) {
-                int16_t p = i % NUM_LEDS;
-//                __leds[p] = test[(i >> 8) & 3]; //ColorMap(c += 16, 0);
-
-//                for (int16_t p : test2) {
-//                    __leds[p] = ColorMap(c += 16, 0);
-//                }
-
-                //int16_t p = test2[i % (sizeof(test2) / sizeof(test2[0]))];
-                __leds[p] = ColorMap((96 * p)  + (c += 8), 0);
-
-
-                //FastLED[0].showLeds(global_brightness);
-                FastLED.show(255);
-
-//                __leds[(i - 5) % NUM_LEDS] = CRGB::Black;
-//                delay(1);
-//                ets_delay_us(10);
-            }
-            auto delta = micros() - before;
-            ESP_LOGI(TAG, "%u iters took %lu (%lu per) -> FPS %.2f (%u)", iters, delta, delta / iters, 1e6 * iters / delta, c);
-        }
-    }
-    */
-
-    /*
-    uint32_t c = 0;
-    uint64_t rng = 0;
-    while (1) {
-        rng = (rng * 134775813 + 1);
-        uint32_t prng = rng >> 32;
-        for (int i = 0; i < NUM_LEDS; i++) {
-            // Want only 1/8th of LEDS on
-            bool on = (prng & 0b11100) == (i & 0b11100);
-            __leds[i] = !on ? CRGB::Black : ColorMap((8 * 255 * i)  + (c += 2), 0);
-        }
-        FastLED.show(255);
-        delay(250);
-    }
-//    */
-
-    // Load Twinkle Midi
     ProcessCommand(DEFAULT_PATTERN);
 }
 
@@ -571,7 +516,7 @@ void hl_loop() {
     if (global_tDelta < 0) global_tDelta = INVERSE_MICROS;
 
 #if CAP_SENSOR_CODE
-    if (checkCapSensorPattern()) {
+    if (cap_init_success && checkCapSensorPattern()) {
         last_human_input_t = millis();
     }
 #endif
@@ -588,7 +533,10 @@ void hl_loop() {
 
     // After 30-50 seconds go back to DEFAULT pattern
     int32_t no_update_millis = millis() - last_human_input_t;
-    bool no_recent_touches = (30 * 1000 < no_update_millis) && (current_pattern != OMBRE);
+    const uint32_t fade_start = 30 * 1000;
+    const uint32_t fade_down = fade_start + 6 * 1000;
+    const uint32_t fade_up   = fade_down + 8 * 1000;
+    bool no_recent_touches = (fade_start < no_update_millis) && (current_pattern != OMBRE);
 
     if (fade_stage == 0) {
         if (no_recent_touches) {
@@ -608,28 +556,20 @@ void hl_loop() {
     }
 
     if (fade_stage == 1) {
-        if ((global_brightness & 0b111) == 0)
-            ESP_LOGI(TAG, "Fade down @ %d", global_brightness);
-        if (global_brightness > 1) {
-            global_brightness -= (global_brightness >> 6);
-            if (global_brightness > 0)
-                global_brightness -= 1;
-            // Make this a little slower
-            delay(60);
-        } else {
+        // Linear fade down from fade_start to fade_down
+        global_brightness = pre_fade_brightness - ((uint64_t) pre_fade_brightness * (no_update_millis - fade_start)) / (fade_down - fade_start);
+//        ESP_LOGI(TAG, "Fade up %d/%d -> %d", no_update_millis, fade_down, global_brightness);
+        if (global_brightness == 0 || (no_update_millis > fade_down)) {
             fade_stage = 2;
             ProcessCommand(DEFAULT_PATTERN);
         }
     } else if (fade_stage == 2) {
-        if ((global_brightness & 0b111) == 0)
-            ESP_LOGI(TAG, "Fade up @ %d/%d", global_brightness, pre_fade_brightness);
-        global_brightness += 1;
-        if (global_brightness >= pre_fade_brightness) {
+        global_brightness = ((uint64_t) pre_fade_brightness * (no_update_millis - fade_down)) / (fade_up - fade_down);
+//        ESP_LOGI(TAG, "Fade up %d/%d -> %d", no_update_millis, fade_up, global_brightness);
+        if (global_brightness >= pre_fade_brightness || (no_update_millis > fade_up)) {
             global_brightness = pre_fade_brightness;
             fade_stage = 0;
         }
-        // Make this a little slower
-        delay(60);
     }
 
     /*

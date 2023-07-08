@@ -19,11 +19,7 @@
 #include <esp_system.h>
 
 #include "HomeLights.h"
-#include "Networking.h"
 
-
-//extern SemaphoreHandle_t xMutex;
-SemaphoreHandle_t xMutex;
 
 static const char *TAG = "LIGHTS";
 
@@ -32,9 +28,7 @@ void home_lights_run(void *pvParameters) {
   hl_setup();
 
   while (1) {
-    xSemaphoreTake( xMutex, portMAX_DELAY);
     hl_loop();
-    xSemaphoreGive( xMutex );
   }
 
   // In the weird that we end kill our task
@@ -42,21 +36,11 @@ void home_lights_run(void *pvParameters) {
   vTaskDelete(NULL);
 }
 
-// void recieve_commands(void *pvParameters) {
-//   networking_main();
-
-//   // After network server is setup, delete this task
-//   vTaskDelete(NULL);
-// }
-
 extern "C" {
   void app_main();
 }
 
 void app_main() {
-
-  // TODO flash a ACK pattern
-  xMutex = xSemaphoreCreateMutex();
 
   /**
    * Tasks must never end:
@@ -67,16 +51,13 @@ void app_main() {
    *  Tasks can, however, delete themselves."
    */
 
-  //ESP_LOGI(TAG, "Creating task for receiving commands()\n");
-  //xTaskCreate(&recieve_commands, "Recieve Commands", /*usStackDepth=*/ 4000, (void*) NULL, /*uxPriority=*/ 6, NULL);
-
   vTaskDelay(pdMS_TO_TICKS(1000));
   ESP_LOGI(TAG, "Creating task for home_lights()\n");
   xTaskCreate(&home_lights_run, "home lights", /*usStackDepth=*/ 4000, (void*) NULL, /*uxPriority=*/ 5, NULL);
 
-  size_t i = 0;
-  while (1) {
-    vTaskDelay(pdMS_TO_TICKS(10000));
-    ESP_LOGI(TAG, "MAIN LOOP %u\n", ++i);
-  }
+  // size_t i = 0;
+  // while (1) {
+  //   vTaskDelay(pdMS_TO_TICKS(10000));
+  //   ESP_LOGI(TAG, "MAIN LOOP %u\n", ++i);
+  // }
 }

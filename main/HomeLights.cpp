@@ -55,7 +55,7 @@ using std::string;
 
 #define USE_SERIAL  1
 
-#define CAP_SENSOR_CODE 0
+#define CAP_SENSOR_CODE 1
 
 static const char *TAG = "HomeLights";
 
@@ -99,13 +99,13 @@ void FASTLED_safe_show() {
 
 // SN74HCT245 OUTPUT_ENABLE, active_low
 #define LIGHTS_DISABLE_PIN GPIO_NUM_15
-#define ONBOARD_LED_PIN GPIO_NUM_2
+//#define ONBOARD_LED_PIN GPIO_NUM_2
 
 static void blink_onboard_led(uint16_t duration_millis) {
-    gpio_set_level(ONBOARD_LED_PIN, 1);
-    vTaskDelay(pdMS_TO_TICKS(duration_millis));
-    gpio_set_level(ONBOARD_LED_PIN, 0);
-    vTaskDelay(pdMS_TO_TICKS(duration_millis));
+    // gpio_set_level(ONBOARD_LED_PIN, 1);
+    // vTaskDelay(pdMS_TO_TICKS(duration_millis));
+    // gpio_set_level(ONBOARD_LED_PIN, 0);
+    // vTaskDelay(pdMS_TO_TICKS(duration_millis));
 }
 
 static void enable_converter() {
@@ -113,7 +113,7 @@ static void enable_converter() {
     // board_led_operation, board_led_init
     // Onboard LED
 
-    gpio_set_direction(ONBOARD_LED_PIN, GPIO_MODE_OUTPUT);
+//    gpio_set_direction(ONBOARD_LED_PIN, GPIO_MODE_OUTPUT);
 
     {
         const bool disable_lights = 0;
@@ -278,22 +278,20 @@ void flashColorSync(CRGB color, uint32_t time_ms) {
     delay(time_ms);
 }
 
-void SetRippleEffect(Pattern pattern, CRGB color, float motion_speed, float density) {
-    ESP_LOGI(TAG, "New effect with r=%2d, g=%2d, b=%2d | speed=%.2f, density=%.2f",
-        color.r, color.g, color.b, motion_speed, density);
+void SetRippleEffect(Pattern pattern, CRGB color, float motion_speed) {
+    ESP_LOGI(TAG, "New effect %d with r=%2d, g=%2d, b=%2d | speed=%.2f",
+        pattern, color.r, color.g, color.b, motion_speed);
 
     // Not needed because will have just pressed a new button and got flash from that?
     //if (color != color_a && color != CRGB::Black) {
     //    flashColorSync(color, 150);
     //}
 
-    // TODO do something to handle color = 4 -> special
     color_a = color;
 
-    // TODO test plumbing of motion_speed & density
-    //RIPPLE_DRIFT_SPEED = motion_speed;
-    RIPPLE_DENSITY = min(1.0f, max(0.0f, density));
-    // Non of these require setting other params so we can directly set current_pattern
+    RIPPLE_DRIFT_SPEED = motion_speed;
+
+    // None of these require setting other params so we can directly set current_pattern
     current_pattern = pattern;
 }
 
@@ -357,8 +355,8 @@ bool checkCapSensorPattern() {
                                 (which & 0b10000) ? CRGB::Black : CRGB::Purple;
 
             ESP_LOGI(TAG, "new_data: %x -> CRGB(%2d,%2d,%2d)", new_data, flash_color.r, flash_color.g, flash_color.b);
-            flash_color = blend(flash_color, CRGB::Black, 64);
-            flashColorSync(flash_color, 100);
+            flash_color = blend(flash_color, CRGB::Black, 128);
+            flashColorSync(flash_color, 150);
         }
     }
 
@@ -373,42 +371,80 @@ bool checkCapSensorPattern() {
         if (sensor_pairs == 0b00000001) {
              /* Water */
              //SetRippleEffect(WAVING, ELEMENT_COLORS[0], 1.5,    1.0);
+            global_cm = 0;
+            is_reversed = true;
              ProcessCommand("OCEAN_WAVES");
         }
-        if (sensor_pairs == 0b00000010) { /* Fire  */ SetRippleEffect(WAVING, ELEMENT_COLORS[1], 3,      0.4); }
-        if (sensor_pairs == 0b00000100) { /* Earth */ SetRippleEffect(WAVING, ELEMENT_COLORS[2], 0.5,    1.0); }
-        if (sensor_pairs == 0b00001000) { /* Air   */ SetRippleEffect(WAVING, ELEMENT_COLORS[3], 2,      0.7); }
+        if (sensor_pairs == 0b00000010) {
+            global_cm = 4; // RedOrange
+            is_reversed = false;
+            /* Fire  */
+            // SetRippleEffect(WAVING_OMBRE,       ELEMENT_COLORS[1], 0.002);
+            ProcessCommand("DRAINBOW");
+        } else if (sensor_pairs == 0b00000100) {
+            global_cm = 5;
+            is_reversed = false;
+            /* Earth */ SetRippleEffect(OMBRE_WAVING_OMBRE, ELEMENT_COLORS[2], 0.0015);
+        } else if (sensor_pairs == 0b00001000) {
+            global_cm = 0;
+            is_reversed = false;
+            /* Air   */ SetRippleEffect(WAVING,             ELEMENT_COLORS[3], 0.005);
 
-        if (sensor_pairs == 0b00010000) {
+        } else if (sensor_pairs == 0b00010000) {
             /* Rainbow */
+            global_cm = 0;
+            is_reversed = false;
             ProcessCommand("RAINBOW");
-        }
 
-        if (sensor_pairs == 0b00100000) {
-            /* Snake, using last color */
+        } else if (sensor_pairs == 0b00100000) {
+            /* Snake, starting from opposite last color */
+            global_cm = 0;
+            is_reversed = false;
+
+            color_a_wheel_i = guessWheel(color_a) + 128 * 256;
             for (int strip_i = 0; strip_i < NUM_STRIPS; strip_i++)
-                snake_colors[strip_i] = color_a;
+                snake_colors[strip_i] = ColorMap(color_a_wheel_i);
+
             ProcessCommand("SNAKE");
-        }
-        if (sensor_pairs == 0b01000000) {
+
+        } else if (sensor_pairs == 0b01000000) {
             /* Sparkles / Twinkle */
-            // TODO XXX see if this can interact with past pattern by fading it down slowly?
+            global_cm = 0;
+            is_reversed = false;
             ProcessCommand("TWINKLE");
         }
 
     } else if (cur_data == 0xF) {
             // TODO only forward
             /* Four Left */
-            SetRippleEffect(WAVING_SEGMENTS_1, CRGB::Black, 0.5,  1.0);
+            global_cm = 0;
+            is_reversed = false;
+            SetRippleEffect(WAVING_SEGMENTS_1, CRGB::Black, 0.004);
     } else if (cur_data == (0xF << SENSORS_PER)) {
             // TODO only backwards
             /* Four Right */
-            SetRippleEffect(WAVING_SEGMENTS_1, CRGB::Black, -0.5, 1.0);
+            global_cm = 0;
+            is_reversed = false;
+            SetRippleEffect(WAVING_SEGMENTS_1, CRGB::Black, -0.004);
     } else if (sensor_pairs == 0b00001111) {
             /* All Eight */
-            SetRippleEffect(WAVING_SEGMENTS_2, CRGB::Black, -0.5, 1.0);
+            global_cm = 0;
+            is_reversed = false;
+            SetRippleEffect(WAVING_SEGMENTS_2, CRGB::Black, 0.001);
+
+    } else if (sensor_pairs == 0b1111111) {
+            /* All Eight */
+            global_cm = 0;
+            is_reversed = false;
+            ProcessCommand("RAVE");
     }
 
+
+    if (count > 0 && cur_data != last_data) {
+        ESP_LOGI(TAG, "At end global_cm=%d", global_cm);
+    }
+
+    // Some human input
     return true;
 }
 
@@ -456,8 +492,8 @@ void hl_setup() {
      * seems not to be const expr. So I have to do this.
      */
 
-    NUM_LEDS = 64;
-    NUM_STRIPS = 7;
+    NUM_LEDS = 138;
+    NUM_STRIPS = 2;
     assert(NUM_STRIPS <= MAX_NUM_STRIPS);
 
 #define DATA_PIN_CONN_1 32
@@ -470,16 +506,18 @@ void hl_setup() {
 #define DATA_PIN_CONN_8 13
 
     // HACK FOR MOURNING OWL both strips are the "same"
-    //FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_5, COLOR_ORDER>(__leds, NUM_LEDS);
-    //FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_6, COLOR_ORDER>(__leds, NUM_LEDS);
+    FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_5, COLOR_ORDER>(__leds, NUM_LEDS + 3);
+    FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_6, COLOR_ORDER>(__leds, NUM_LEDS + 3);
+    //FastLED.addLeds<STRAND_TYPE, GPIO_NUM_19, COLOR_ORDER>(__leds, NUM_LEDS);
 
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_12, COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_14, COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_27, COLOR_ORDER>(__leds, 2 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_26, COLOR_ORDER>(__leds, 3 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_25, COLOR_ORDER>(__leds, 4 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_33, COLOR_ORDER>(__leds, 5 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_32, COLOR_ORDER>(__leds, 6 * MAX_NUM_LEDS, NUM_LEDS);
+    // Dream Willow
+    // FastLED.addLeds<STRAND_TYPE, GPIO_NUM_12, COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<STRAND_TYPE, GPIO_NUM_14, COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<STRAND_TYPE, GPIO_NUM_27, COLOR_ORDER>(__leds, 2 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<STRAND_TYPE, GPIO_NUM_26, COLOR_ORDER>(__leds, 3 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<STRAND_TYPE, GPIO_NUM_25, COLOR_ORDER>(__leds, 4 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<STRAND_TYPE, GPIO_NUM_33, COLOR_ORDER>(__leds, 5 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<STRAND_TYPE, GPIO_NUM_32, COLOR_ORDER>(__leds, 6 * MAX_NUM_LEDS, NUM_LEDS);
 
 //#define DATA_PIN GPIO_NUM_32
 //#define CLK_PIN GPIO_NUM_33
@@ -533,9 +571,9 @@ void hl_loop() {
 
     // After 30-50 seconds go back to DEFAULT pattern
     int32_t no_update_millis = millis() - last_human_input_t;
-    const uint32_t fade_start = 30 * 1000;
-    const uint32_t fade_down = fade_start + 6 * 1000;
-    const uint32_t fade_up   = fade_down + 8 * 1000;
+    const uint32_t fade_start = 60 * 1000;
+    const uint32_t fade_down = fade_start + 10 * 1000;
+    const uint32_t fade_up   = fade_down + 12 * 1000;
     bool no_recent_touches = (fade_start < no_update_millis) && (current_pattern != OMBRE);
 
     if (fade_stage == 0) {
@@ -561,6 +599,7 @@ void hl_loop() {
 //        ESP_LOGI(TAG, "Fade up %d/%d -> %d", no_update_millis, fade_down, global_brightness);
         if (global_brightness == 0 || (no_update_millis > fade_down)) {
             fade_stage = 2;
+            global_cm = 0;
             ProcessCommand(DEFAULT_PATTERN);
         }
     } else if (fade_stage == 2) {
@@ -596,6 +635,7 @@ void hl_loop() {
 
         // Turn of the "extra" LEDs. This keeps them from occasionally becoming a color
         for (uint32_t i = NUM_LEDS; i < MAX_NUM_LEDS; i++)
+            // Can break if is_reversed
             setPixel(i, CRGB::Black);
 
         showStrips();
@@ -616,7 +656,7 @@ void hl_loop() {
     // Broken if interupts are disabled and micros isn't updated
     global_tDelta = (micros_now - micros_last) * INVERSE_MICROS;
 
-    if (global_frames % 400 == 0) {
+    if (global_frames % 1000 == 0) {
         ESP_LOGI(TAG, "%d | %llu => Pattern %d (%llu)", global_frames, micros_now, current_pattern, micros_after - micros_now);
     }
 

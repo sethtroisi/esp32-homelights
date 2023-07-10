@@ -129,16 +129,6 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
-# MPR121 Configuration
-#
-CONFIG_GPIO_RANGE_MAX=33
-CONFIG_I2C_ADDRESS=0x5A
-CONFIG_SCL_GPIO=4
-CONFIG_SDA_GPIO=2
-CONFIG_IRQ_GPIO=0
-# end of MPR121 Configuration
-
-#
 # Compiler options
 #
 # CONFIG_COMPILER_OPTIMIZATION_DEFAULT is not set

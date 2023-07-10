@@ -96,14 +96,14 @@ void FASTLED_safe_show() {
 //--------------------------------------------------------------------------||
 
 // SN74HCT245 OUTPUT_ENABLE, active_low
-#define LIGHTS_DISABLE_PIN GPIO_NUM_15
-//#define ONBOARD_LED_PIN GPIO_NUM_2
+// #define LIGHTS_DISABLE_PIN GPIO_NUM_15
+#define ONBOARD_LED_PIN GPIO_NUM_2
 
 static void blink_onboard_led(uint16_t duration_millis) {
-    // gpio_set_level(ONBOARD_LED_PIN, 1);
-    // vTaskDelay(pdMS_TO_TICKS(duration_millis));
-    // gpio_set_level(ONBOARD_LED_PIN, 0);
-    // vTaskDelay(pdMS_TO_TICKS(duration_millis));
+    gpio_set_level(ONBOARD_LED_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(duration_millis));
+    gpio_set_level(ONBOARD_LED_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(duration_millis));
 }
 
 static void enable_converter() {
@@ -111,19 +111,19 @@ static void enable_converter() {
     // board_led_operation, board_led_init
     // Onboard LED
 
-//    gpio_set_direction(ONBOARD_LED_PIN, GPIO_MODE_OUTPUT);
+   gpio_set_direction(ONBOARD_LED_PIN, GPIO_MODE_OUTPUT);
 
-    {
-        const bool disable_lights = 0;
-        gpio_reset_pin(LIGHTS_DISABLE_PIN);
-        gpio_set_direction(LIGHTS_DISABLE_PIN, GPIO_MODE_OUTPUT);
-        gpio_set_pull_mode(LIGHTS_DISABLE_PIN, GPIO_FLOATING);
-        gpio_set_level(LIGHTS_DISABLE_PIN, disable_lights);
-        if (disable_lights) {
-            ESP_LOGI(TAG, "LIGHTS DISABLED AT 3->5 volt converter\n");
-            vTaskDelay(pdMS_TO_TICKS(1000));
-        }
-    }
+    // {
+    //     const bool disable_lights = 0;
+    //     gpio_reset_pin(LIGHTS_DISABLE_PIN);
+    //     gpio_set_direction(LIGHTS_DISABLE_PIN, GPIO_MODE_OUTPUT);
+    //     gpio_set_pull_mode(LIGHTS_DISABLE_PIN, GPIO_FLOATING);
+    //     gpio_set_level(LIGHTS_DISABLE_PIN, disable_lights);
+    //     if (disable_lights) {
+    //         ESP_LOGI(TAG, "LIGHTS DISABLED AT 3->5 volt converter\n");
+    //         vTaskDelay(pdMS_TO_TICKS(1000));
+    //     }
+    // }
 }
 
 // D2 is connected to onboard LED which could be fun (if I pulled it high?)
@@ -190,6 +190,7 @@ static bool next_button_debounced(void)
 
 //--------------------------------------------------------------------------||
 
+int TRUNK_NUM_LEDS;
 
 void hl_setup() {
     ESP_LOGI(TAG, "hl setup");
@@ -211,25 +212,52 @@ void hl_setup() {
      * seems not to be const expr. So I have to do this.
      */
 
-    NUM_LEDS = 64;
-    NUM_STRIPS = 7;
-    assert((NUM_STRIPS + 1) <= MAX_NUM_STRIPS);
+    NUM_LEDS = 75;
+    NUM_STRIPS = 2;
+    assert(8 <= MAX_NUM_STRIPS);
     assert(150 <= MAX_NUM_LEDS);
 
-    // Dream Willow (This is the VIN GND side starting 1 pin down (skipping D13)
-    // Body
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_12, COLOR_ORDER>(__leds, 6 * MAX_NUM_LEDS, NUM_LEDS);
+    // Dream Willow (This is 8 pins directly after VIN GND)
 
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_14, COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_27, COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_26, COLOR_ORDER>(__leds, 2 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_25, COLOR_ORDER>(__leds, 3 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_33, COLOR_ORDER>(__leds, 4 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_32, COLOR_ORDER>(__leds, 5 * MAX_NUM_LEDS, NUM_LEDS);
-    //FastLED.addLeds<STRAND_TYPE, GPIO_NUM_35, COLOR_ORDER>(__leds, 6 * MAX_NUM_LEDS, NUM_LEDS);
+#define GRID_STRAND_TYPE WS2812B
+#define GRID_COLOR_ORDER EOrder::RGB
+
+    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_13, COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, 150);
+    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_12, COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, 150);
+
+    // Left side pinout is D13, D12, D14, D27, D26, D25, D33, D32
+    // Right side pinout is D15, D2 (led), D4, D16, D17
+    //      then we use D5, D18, D19, D21, D3, D1, D22, D23
+
+    // Trunk Body (On the VIN/GND side)
+    // This needs inverted color order but because of time pressure we just handle it in PostProcess
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_13, GRID_COLOR_ORDER>(__leds2, 7 * MAX_NUM_LEDS, 150);
+    // Pads
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_12, GRID_COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_14, GRID_COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_27, GRID_COLOR_ORDER>(__leds, 2 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_26, GRID_COLOR_ORDER>(__leds, 3 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_25, GRID_COLOR_ORDER>(__leds, 4 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_33, GRID_COLOR_ORDER>(__leds, 5 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_32, GRID_COLOR_ORDER>(__leds, 6 * MAX_NUM_LEDS, NUM_LEDS);
+
+
+    // // Trunk Body (on the 3v3/GND side)
+    // // This needs inverted color order but because of time pressure we just handle it in PostProcess
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_32, GRID_COLOR_ORDER>(__leds2, 7 * MAX_NUM_LEDS, TRUNK_NUM_LEDS);
+    // // PADS
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_5, GRID_COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_18, GRID_COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_19, GRID_COLOR_ORDER>(__leds, 2 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_21, GRID_COLOR_ORDER>(__leds, 3 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_3, GRID_COLOR_ORDER>(__leds, 4 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_1, GRID_COLOR_ORDER>(__leds, 5 * MAX_NUM_LEDS, NUM_LEDS);
+    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_22, GRID_COLOR_ORDER>(__leds, 6 * MAX_NUM_LEDS, NUM_LEDS);
+
+    // global_brightness = 255;
 
     FastLED.setCorrection(TypicalLEDStrip);
-    //FastLED.setBrightness(DEFAULT_BRIGHTNESS);
+    FastLED.setBrightness(global_brightness);
     //FastLED.setDither(DEFAULT_BRIGHTNESS < 255);
     //FastLED.setMaxPowerInVoltsAndMilliamps(5, 2000);
 
@@ -242,11 +270,6 @@ void hl_setup() {
     ProcessCommand(DEFAULT_PATTERN);
 }
 
-// Terrible globals for fade down and up
-uint64_t last_human_input_t = 0;
-uint8_t fade_stage = 0; // 0 nothing, 1 down, 2 up
-uint8_t pre_fade_brightness = 0;
-
 void hl_loop() {
     const float INVERSE_MICROS = 1e-6;
 
@@ -258,12 +281,6 @@ void hl_loop() {
 
     if (global_tDelta < 0) global_tDelta = INVERSE_MICROS;
 
-#if CAP_SENSOR_CODE
-    if (cap_init_success && checkCapSensorPattern()) {
-        last_human_input_t = millis();
-    }
-#endif
-
     // Check for manual pattern advance.
     if (next_button_debounced()) {
         blink_onboard_led(50);
@@ -271,79 +288,51 @@ void hl_loop() {
         //RefreshLastUpdate();
         // -1 => Next pattern (including blanks)
         loadMIDIEffects(-1);
-        last_human_input_t = millis();
+        // Stay on pattern for a long time
+        last_update_t = 0xFFFFFFFF;
     }
 
-    // After 30-50 seconds go back to DEFAULT pattern
-    int32_t no_update_millis = millis() - last_human_input_t;
-    const uint32_t fade_start = 60 * 1000;
-    const uint32_t fade_down = fade_start + 10 * 1000;
-    const uint32_t fade_up   = fade_down + 12 * 1000;
-    bool no_recent_touches = (fade_start < no_update_millis) && (current_pattern != OMBRE);
+    // Rotate every 20-30 seconds Try and wait 60 seconds if the button was manually changed
+    uint32_t update_millis_a = millis() - last_update_t;
 
-    if (fade_stage == 0) {
-        if (no_recent_touches) {
-            ESP_LOGI(TAG, "Starting fade after %d with brightness = %d", no_update_millis, global_brightness);
-
-            fade_stage = 1;
-            // Fade to black, saving old brightness
-            pre_fade_brightness = global_brightness;
-        }
-    } else {
-        if (no_update_millis < 1000) {
-            ESP_LOGI(TAG, "Fade up recent press %d", no_update_millis);
-            // Start bring up immediately.
-            fade_stage = 2;
-            global_brightness = pre_fade_brightness;
-        }
-    }
-
-    if (fade_stage == 1) {
-        // Linear fade down from fade_start to fade_down
-        global_brightness = pre_fade_brightness - ((uint64_t) pre_fade_brightness * (no_update_millis - fade_start)) / (fade_down - fade_start);
-//        ESP_LOGI(TAG, "Fade up %d/%d -> %d", no_update_millis, fade_down, global_brightness);
-        if (global_brightness == 0 || (no_update_millis > fade_down)) {
-            fade_stage = 2;
-            global_cm = 0;
-            ProcessCommand(DEFAULT_PATTERN);
-        }
-    } else if (fade_stage == 2) {
-        global_brightness = ((uint64_t) pre_fade_brightness * (no_update_millis - fade_down)) / (fade_up - fade_down);
-//        ESP_LOGI(TAG, "Fade up %d/%d -> %d", no_update_millis, fade_up, global_brightness);
-        if (global_brightness >= pre_fade_brightness || (no_update_millis > fade_up)) {
-            global_brightness = pre_fade_brightness;
-            fade_stage = 0;
-        }
-    }
-
-    /*
-    if (update_millis_a > (6 * 3600 * 1000)) {
-        // After 2 hours change to BLACK;
-        current_pattern = NONE;
-        active_strips = ALL_STRIPS;
-        global_brightness = DEFAULT_BRIGHTNESS;
-        clearLonger();
+    if ((millis() > last_update_t) && (update_millis_a > 12 * 1000)) {
+        loadMIDIEffects(-1);
         last_update_t = millis();
     }
-    */
 
     // Main pattern loop.
     {
+        global_frames += 1;
         PatternProcessor();
         //PatternPostProcessor();
 
-        // // Set 0th LED to let us know this is working
-        // setPixel(0, ColorMap(256 * global_frames, 3));
+        // PatternProcessor for all of DreamWillow
 
-        // // Set 1st LED to let us see MIDI events being processed
-        // setPixel(1, ColorMap(256 * global_MIDI_count, 3));
+        // Set 0th LED to let us know this is working
+        //setPixel(0, ColorMap(256 * global_frames, 3));
 
-        // Turn of the "extra" LEDs. This keeps them from occasionally becoming a color
-        for (uint32_t i = NUM_LEDS; i < MAX_NUM_LEDS; i++)
-            // Can break if is_reversed
-            setPixel(i, CRGB::Black);
+        // { // Post Processing to fix COLOR order difference between WS2812B and Neopixel (?) Strips
+        //     for (uint32_t i = 0; i < TRUNK_NUM_LEDS; i++) {
+        //         uint32_t j = 7 * MAX_NUM_LEDS + i;
+        //         __leds2[j] = CRGB(__leds[j].g, __leds[j].r, __leds[j].b);
+        //     }
 
-        showStrips();
+        //     for (uint32_t i = 7 * MAX_NUM_LEDS + TRUNK_NUM_LEDS; i < 7 * MAX_NUM_LEDS + MAX_NUM_LEDS; i++) {
+        //         __leds2[i] = CRGB::Black;
+        //     }
+        // }
+
+        { // Post Processing to fix COLOR order difference between WS2812B and Neopixel (?) Strips
+            for (uint32_t strip_i = 0; strip_i < NUM_STRIPS; strip_i++) {
+                for (uint32_t i = 0; i < NUM_LEDS; i++) {
+                    uint32_t a = strip_i * MAX_NUM_LEDS + i;
+                    uint32_t b = strip_i * MAX_NUM_LEDS + 149 - i;
+                    __leds[b] = __leds[a];
+                }
+            }
+        }
+
+        FASTLED_safe_show();
     }
 
     uint64_t micros_after = micros();

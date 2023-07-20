@@ -86,7 +86,7 @@ void FASTLED_safe_show() {
     // In practice 300us seems to work nicely
     ets_delay_us(300);
 
-    FastLED.show();
+    FastLED.show(global_brightness);
 
     // Be double safe
     ets_delay_us(300);
@@ -212,7 +212,7 @@ void hl_setup() {
      * seems not to be const expr. So I have to do this.
      */
 
-    NUM_LEDS = 75;
+    NUM_LEDS = 68;
     NUM_STRIPS = 2;
     assert(8 <= MAX_NUM_STRIPS);
     assert(150 <= MAX_NUM_LEDS);
@@ -270,6 +270,8 @@ void hl_setup() {
     ProcessCommand(DEFAULT_PATTERN);
 }
 
+uint32_t fade_stage = 0;
+uint32_t pre_fade_brightness = 0;
 void hl_loop() {
     const float INVERSE_MICROS = 1e-6;
 
@@ -292,12 +294,37 @@ void hl_loop() {
         last_update_t = 0xFFFFFFFF;
     }
 
-    // Rotate every 20-30 seconds Try and wait 60 seconds if the button was manually changed
-    uint32_t update_millis_a = millis() - last_update_t;
+    // After 30-50 seconds go back to DEFAULT pattern
+    int32_t no_update_millis = millis() - last_update_t;
+    const uint32_t fade_start = 90 * 1000;
+    const uint32_t fade_down = fade_start + 10 * 1000;
+    const uint32_t fade_up   = fade_down + 5 * 1000;
+    bool no_recent_touches = (millis() > last_update_t) && (no_update_millis > fade_start);
 
-    if ((millis() > last_update_t) && (update_millis_a > 12 * 1000)) {
-        loadMIDIEffects(-1);
-        last_update_t = millis();
+    if (fade_stage == 0) {
+        if (no_recent_touches) {
+            // ESP_LOGI(TAG, "Starting fade after %d with brightness = %d", no_update_millis, global_brightness);
+
+            fade_stage = 1;
+            // Fade to black, saving old brightness
+            pre_fade_brightness = global_brightness;
+        }
+    } else if (fade_stage == 1) {
+        // Linear fade down from fade_start to fade_down
+        global_brightness = pre_fade_brightness - ((uint64_t) pre_fade_brightness * (no_update_millis - fade_start)) / (fade_down - fade_start);
+        // ESP_LOGI(TAG, "Fade down %d/%d -> %d", no_update_millis, fade_down, global_brightness);
+        if (global_brightness == 0 || (no_update_millis > fade_down)) {
+            fade_stage = 2;
+            loadMIDIEffects(-1);
+        }
+    } else if (fade_stage == 2) {
+        global_brightness = ((uint64_t) pre_fade_brightness * (no_update_millis - fade_down)) / (fade_up - fade_down);
+        // ESP_LOGI(TAG, "Fade up %d/%d -> %d", no_update_millis, fade_up, global_brightness);
+        if (global_brightness >= pre_fade_brightness || (no_update_millis > fade_up)) {
+            global_brightness = pre_fade_brightness;
+            fade_stage = 0;
+            last_update_t = millis();
+        }
     }
 
     // Main pattern loop.

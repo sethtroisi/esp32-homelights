@@ -212,8 +212,8 @@ void hl_setup() {
      * seems not to be const expr. So I have to do this.
      */
 
-    NUM_LEDS = 68;
-    NUM_STRIPS = 2;
+    NUM_LEDS = 64;
+    NUM_STRIPS = 8;
     assert(8 <= MAX_NUM_STRIPS);
     assert(150 <= MAX_NUM_LEDS);
 
@@ -222,24 +222,24 @@ void hl_setup() {
 #define GRID_STRAND_TYPE WS2812B
 #define GRID_COLOR_ORDER EOrder::RGB
 
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_13, COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, 150);
-    FastLED.addLeds<STRAND_TYPE, GPIO_NUM_12, COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, 150);
+    //FastLED.addLeds<STRAND_TYPE, GPIO_NUM_13, COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, 150);
+    //FastLED.addLeds<STRAND_TYPE, GPIO_NUM_12, COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, 150);
 
     // Left side pinout is D13, D12, D14, D27, D26, D25, D33, D32
     // Right side pinout is D15, D2 (led), D4, D16, D17
     //      then we use D5, D18, D19, D21, D3, D1, D22, D23
 
     // Trunk Body (On the VIN/GND side)
-    // This needs inverted color order but because of time pressure we just handle it in PostProcess
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_13, GRID_COLOR_ORDER>(__leds2, 7 * MAX_NUM_LEDS, 150);
     // Pads
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_12, GRID_COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_14, GRID_COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_27, GRID_COLOR_ORDER>(__leds, 2 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_26, GRID_COLOR_ORDER>(__leds, 3 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_25, GRID_COLOR_ORDER>(__leds, 4 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_33, GRID_COLOR_ORDER>(__leds, 5 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_32, GRID_COLOR_ORDER>(__leds, 6 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_12, GRID_COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_14, GRID_COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_27, GRID_COLOR_ORDER>(__leds, 2 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_26, GRID_COLOR_ORDER>(__leds, 3 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_25, GRID_COLOR_ORDER>(__leds, 4 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_33, GRID_COLOR_ORDER>(__leds, 5 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_32, GRID_COLOR_ORDER>(__leds, 6 * MAX_NUM_LEDS, NUM_LEDS);
+    // This needs inverted color order but because of time pressure we just handle it in PostProcess
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_13, GRID_COLOR_ORDER>(__leds2, 0 * MAX_NUM_LEDS, 150);
 
 
     // // Trunk Body (on the 3v3/GND side)
@@ -338,24 +338,23 @@ void hl_loop() {
         // Set 0th LED to let us know this is working
         //setPixel(0, ColorMap(256 * global_frames, 3));
 
-        // { // Post Processing to fix COLOR order difference between WS2812B and Neopixel (?) Strips
-        //     for (uint32_t i = 0; i < TRUNK_NUM_LEDS; i++) {
-        //         uint32_t j = 7 * MAX_NUM_LEDS + i;
-        //         __leds2[j] = CRGB(__leds[j].g, __leds[j].r, __leds[j].b);
-        //     }
-
-        //     for (uint32_t i = 7 * MAX_NUM_LEDS + TRUNK_NUM_LEDS; i < 7 * MAX_NUM_LEDS + MAX_NUM_LEDS; i++) {
-        //         __leds2[i] = CRGB::Black;
-        //     }
-        // }
-
         { // Post Processing to fix COLOR order difference between WS2812B and Neopixel (?) Strips
-            for (uint32_t strip_i = 0; strip_i < NUM_STRIPS; strip_i++) {
-                for (uint32_t i = 0; i < NUM_LEDS; i++) {
-                    uint32_t a = strip_i * MAX_NUM_LEDS + i;
-                    uint32_t b = strip_i * MAX_NUM_LEDS + 149 - i;
-                    __leds[b] = __leds[a];
-                }
+            for (uint32_t i = 0; i < NUM_LEDS; i++) {
+                uint32_t j = 7 * MAX_NUM_LEDS + i;
+                __leds2[i] = CRGB(__leds[j].g, __leds[j].r, __leds[j].b);
+//                __leds2[i] = CRGB(__leds[j].r, __leds[j].g, __leds[j].b);
+            }
+
+            for (uint32_t i = NUM_LEDS; i < MAX_NUM_LEDS; i++) {
+                __leds2[i] = CRGB::Black;
+            }
+        }
+
+        { // Post Processing to double up the trunk strips
+            for (uint32_t i = 0; i < 150/2; i++) {
+                uint32_t a = 0 * MAX_NUM_LEDS + i;
+                uint32_t b = 0 * MAX_NUM_LEDS + 149 - i;
+                __leds2[b] = __leds2[a];
             }
         }
 

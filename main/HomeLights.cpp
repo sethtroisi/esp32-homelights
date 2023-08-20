@@ -22,6 +22,7 @@
 #include "esp_err.h"
 
 #include "consts.h"
+#include "globals.h"
 #include "fake_shader.h"
 
 #include "FastLED.h"
@@ -254,8 +255,6 @@ void hl_setup() {
     // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_1, GRID_COLOR_ORDER>(__leds, 5 * MAX_NUM_LEDS, NUM_LEDS);
     // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_22, GRID_COLOR_ORDER>(__leds, 6 * MAX_NUM_LEDS, NUM_LEDS);
 
-    // global_brightness = 255;
-
     FastLED.setCorrection(TypicalLEDStrip);
     FastLED.setBrightness(global_brightness);
     //FastLED.setDither(DEFAULT_BRIGHTNESS < 255);
@@ -272,6 +271,7 @@ void hl_setup() {
 
 uint32_t fade_stage = 0;
 uint32_t pre_fade_brightness = 0;
+
 void hl_loop() {
     const float INVERSE_MICROS = 1e-6;
 
@@ -287,18 +287,22 @@ void hl_loop() {
     if (next_button_debounced()) {
         blink_onboard_led(50);
 
-        //RefreshLastUpdate();
-        // -1 => Next pattern (including blanks)
-        loadMIDIEffects(-1);
-        // Stay on pattern for a long time
-        last_update_t = 0xFFFFFFFF;
+        if (disable_ombre == 0) {
+            disable_ombre = 1;
+        } else {
+            //RefreshLastUpdate();
+            // -2 => Next pattern (including OMBRE_WAVING_OMBRE)
+            loadMIDIEffects(-2);
+            // Stay on pattern for a long time
+            last_update_t = 0xFFFFFFFF;
+        }
     }
 
     // After 30-50 seconds go back to DEFAULT pattern
     int32_t no_update_millis = millis() - last_update_t;
-    const uint32_t fade_start = 90 * 1000;
-    const uint32_t fade_down = fade_start + 10 * 1000;
-    const uint32_t fade_up   = fade_down + 5 * 1000;
+    const uint32_t fade_start = 80 * 1000;
+    const uint32_t fade_down = fade_start + 7 * 1000;
+    const uint32_t fade_up   = fade_down + 8 * 1000;
     bool no_recent_touches = (millis() > last_update_t) && (no_update_millis > fade_start);
 
     if (fade_stage == 0) {
@@ -330,6 +334,14 @@ void hl_loop() {
     // Main pattern loop.
     {
         global_frames += 1;
+
+        if (current_pattern == METEOR_SHOWER) {
+            NUM_LEDS = 128;
+        } else {
+            NUM_LEDS = 64;
+        }
+
+
         PatternProcessor();
         //PatternPostProcessor();
 
@@ -337,6 +349,30 @@ void hl_loop() {
 
         // Set 0th LED to let us know this is working
         //setPixel(0, ColorMap(256 * global_frames, 3));
+
+        if (current_pattern == METEOR_SHOWER) {
+            // // Have to reverse the leds for the trunk so that stuff goes up it
+            // for (uint32_t i = 0; i < 64/2; i++) {
+            //     uint32_t a = 7 * MAX_NUM_LEDS + i;
+            //     uint32_t b = 7 * MAX_NUM_LEDS + (64-1) - i;
+            //     CRGB ca = __leds[a];
+            //     __leds[a] = __leds[b];
+            //     __leds[b] = ca;
+            // }
+
+            for (uint32_t i = 0; i < 64; i++) {
+                // Branches are a copy of trunk
+                //uint32_t j = 7 * MAX_NUM_LEDS + i;
+                // Branches "extend" the trunk
+                uint32_t j = 7 * MAX_NUM_LEDS + i + 64;
+                CRGB color = __leds[j];
+                for (uint32_t strip_i = 0; strip_i < 7; strip_i++) {
+                    __leds[strip_i * MAX_NUM_LEDS + i] = color;
+                }
+            }
+
+        }
+
 
         { // Post Processing to fix COLOR order difference between WS2812B and Neopixel (?) Strips
             for (uint32_t i = 0; i < NUM_LEDS; i++) {

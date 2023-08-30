@@ -55,7 +55,7 @@ using std::string;
 
 #define USE_SERIAL  1
 
-#define CAP_SENSOR_CODE 1
+#define CAP_SENSOR_CODE 0
 
 static const char *TAG = "HomeLights";
 
@@ -295,6 +295,7 @@ void SetRippleEffect(Pattern pattern, CRGB color, float motion_speed) {
     current_pattern = pattern;
 }
 
+#if CAP_SENSOR_CODE
 bool checkCapSensorPattern() {
 	MPR121_updateAll(&cap_sensor_a);
 	MPR121_updateAll(&cap_sensor_b);
@@ -447,7 +448,7 @@ bool checkCapSensorPattern() {
     // Some human input
     return true;
 }
-
+#endif // CAP_SENSOR_CODE
 
 //--------------------------------------------------------------------------||
 
@@ -469,7 +470,7 @@ void hl_setup() {
         // Blink LEDs as error
         for (int i = 0; i < 5; i++) blink_onboard_led(200);
     }
-#endif
+#endif // CAP_SENSOR_CODE
 
     for (int i = 0; i < 20; i++) blink_onboard_led(10);
 
@@ -506,9 +507,9 @@ void hl_setup() {
 #define DATA_PIN_CONN_8 13
 
     // HACK FOR MOURNING OWL both strips are the "same"
+    FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_4, COLOR_ORDER>(__leds, NUM_LEDS + 3);
     FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_5, COLOR_ORDER>(__leds, NUM_LEDS + 3);
     FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_6, COLOR_ORDER>(__leds, NUM_LEDS + 3);
-    //FastLED.addLeds<STRAND_TYPE, GPIO_NUM_19, COLOR_ORDER>(__leds, NUM_LEDS);
 
     // Dream Willow
     // FastLED.addLeds<STRAND_TYPE, GPIO_NUM_12, COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, NUM_LEDS);
@@ -539,6 +540,7 @@ void hl_setup() {
 
 // Terrible globals for fade down and up
 uint64_t last_human_input_t = 0;
+uint64_t last_change_t = 0;
 uint8_t fade_stage = 0; // 0 nothing, 1 down, 2 up
 uint8_t pre_fade_brightness = 0;
 
@@ -567,14 +569,17 @@ void hl_loop() {
         // -1 => Next pattern (including blanks)
         loadMIDIEffects(-1);
         last_human_input_t = millis();
+        last_change_t = millis();
     }
 
     // After 30-50 seconds go back to DEFAULT pattern
-    int32_t no_update_millis = millis() - last_human_input_t;
-    const uint32_t fade_start = 60 * 1000;
+    uint32_t update_millis_a = millis() - last_human_input_t;
+    int32_t no_update_millis = millis() - last_change_t;
+    const uint32_t fade_start = 20 * 1000;
     const uint32_t fade_down = fade_start + 10 * 1000;
-    const uint32_t fade_up   = fade_down + 12 * 1000;
-    bool no_recent_touches = (fade_start < no_update_millis) && (current_pattern != OMBRE);
+    const uint32_t fade_up   = fade_down + 7 * 1000;
+    bool no_recent_touches = (fade_start < no_update_millis) && ((last_human_input_t == 0) || (update_millis_a > 120 * 1000));
+
 
     if (fade_stage == 0) {
         if (no_recent_touches) {
@@ -600,7 +605,7 @@ void hl_loop() {
         if (global_brightness == 0 || (no_update_millis > fade_down)) {
             fade_stage = 2;
             global_cm = 0;
-            ProcessCommand(DEFAULT_PATTERN);
+            loadMIDIEffects(-1);
         }
     } else if (fade_stage == 2) {
         global_brightness = ((uint64_t) pre_fade_brightness * (no_update_millis - fade_down)) / (fade_up - fade_down);
@@ -608,19 +613,9 @@ void hl_loop() {
         if (global_brightness >= pre_fade_brightness || (no_update_millis > fade_up)) {
             global_brightness = pre_fade_brightness;
             fade_stage = 0;
+            last_change_t = millis();
         }
     }
-
-    /*
-    if (update_millis_a > (6 * 3600 * 1000)) {
-        // After 2 hours change to BLACK;
-        current_pattern = NONE;
-        active_strips = ALL_STRIPS;
-        global_brightness = DEFAULT_BRIGHTNESS;
-        clearLonger();
-        last_update_t = millis();
-    }
-    */
 
     // Main pattern loop.
     {

@@ -97,7 +97,7 @@ void FASTLED_safe_show() {
 //--------------------------------------------------------------------------||
 
 // SN74HCT245 OUTPUT_ENABLE, active_low
-// #define LIGHTS_DISABLE_PIN GPIO_NUM_15
+#define LIGHTS_DISABLE_PIN GPIO_NUM_25
 #define ONBOARD_LED_PIN GPIO_NUM_2
 
 static void blink_onboard_led(uint16_t duration_millis) {
@@ -112,19 +112,19 @@ static void enable_converter() {
     // board_led_operation, board_led_init
     // Onboard LED
 
-   gpio_set_direction(ONBOARD_LED_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(ONBOARD_LED_PIN, GPIO_MODE_OUTPUT);
 
-    // {
-    //     const bool disable_lights = 0;
-    //     gpio_reset_pin(LIGHTS_DISABLE_PIN);
-    //     gpio_set_direction(LIGHTS_DISABLE_PIN, GPIO_MODE_OUTPUT);
-    //     gpio_set_pull_mode(LIGHTS_DISABLE_PIN, GPIO_FLOATING);
-    //     gpio_set_level(LIGHTS_DISABLE_PIN, disable_lights);
-    //     if (disable_lights) {
-    //         ESP_LOGI(TAG, "LIGHTS DISABLED AT 3->5 volt converter\n");
-    //         vTaskDelay(pdMS_TO_TICKS(1000));
-    //     }
-    // }
+    {
+        const bool disable_lights = 0;
+        gpio_reset_pin(LIGHTS_DISABLE_PIN);
+        gpio_set_direction(LIGHTS_DISABLE_PIN, GPIO_MODE_OUTPUT);
+        gpio_set_pull_mode(LIGHTS_DISABLE_PIN, GPIO_FLOATING);
+        gpio_set_level(LIGHTS_DISABLE_PIN, disable_lights);
+        if (disable_lights) {
+            ESP_LOGI(TAG, "LIGHTS DISABLED AT 3->5 volt converter\n");
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
 }
 
 // D2 is connected to onboard LED which could be fun (if I pulled it high?)
@@ -191,8 +191,6 @@ static bool next_button_debounced(void)
 
 //--------------------------------------------------------------------------||
 
-int TRUNK_NUM_LEDS;
-
 void hl_setup() {
     ESP_LOGI(TAG, "hl setup");
     enable_converter();
@@ -226,34 +224,19 @@ void hl_setup() {
     //FastLED.addLeds<STRAND_TYPE, GPIO_NUM_13, COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, 150);
     //FastLED.addLeds<STRAND_TYPE, GPIO_NUM_12, COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, 150);
 
-    // Left side pinout is D13, D12, D14, D27, D26, D25, D33, D32
-    // Right side pinout is D15, D2 (led), D4, D16, D17
-    //      then we use D5, D18, D19, D21, D3, D1, D22, D23
+    // V3 PCB is D26, D27, D14, D12, D13, D18, D19, D23
 
     // Trunk Body (On the VIN/GND side)
     // Pads
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_12, GRID_COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_14, GRID_COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_27, GRID_COLOR_ORDER>(__leds, 2 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_26, GRID_COLOR_ORDER>(__leds, 3 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_25, GRID_COLOR_ORDER>(__leds, 4 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_33, GRID_COLOR_ORDER>(__leds, 5 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_32, GRID_COLOR_ORDER>(__leds, 6 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_26, GRID_COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_27, GRID_COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_14, GRID_COLOR_ORDER>(__leds, 2 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_12, GRID_COLOR_ORDER>(__leds, 3 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_13, GRID_COLOR_ORDER>(__leds, 4 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_18, GRID_COLOR_ORDER>(__leds, 5 * MAX_NUM_LEDS, NUM_LEDS);
     // This needs inverted color order but because of time pressure we just handle it in PostProcess
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_13, GRID_COLOR_ORDER>(__leds2, 0 * MAX_NUM_LEDS, 150);
-
-
-    // // Trunk Body (on the 3v3/GND side)
-    // // This needs inverted color order but because of time pressure we just handle it in PostProcess
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_32, GRID_COLOR_ORDER>(__leds2, 7 * MAX_NUM_LEDS, TRUNK_NUM_LEDS);
-    // // PADS
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_5, GRID_COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_18, GRID_COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_19, GRID_COLOR_ORDER>(__leds, 2 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_21, GRID_COLOR_ORDER>(__leds, 3 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_3, GRID_COLOR_ORDER>(__leds, 4 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_1, GRID_COLOR_ORDER>(__leds, 5 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_22, GRID_COLOR_ORDER>(__leds, 6 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_19, GRID_COLOR_ORDER>(__leds2, 0, 150);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_23, GRID_COLOR_ORDER>(__leds2, 0, 150);
 
     FastLED.setCorrection(TypicalLEDStrip);
     FastLED.setBrightness(global_brightness);
@@ -366,7 +349,7 @@ void hl_loop() {
                 // Branches "extend" the trunk
                 uint32_t j = 7 * MAX_NUM_LEDS + i + 64;
                 CRGB color = __leds[j];
-                for (uint32_t strip_i = 0; strip_i < 7; strip_i++) {
+                for (uint32_t strip_i = 0; strip_i < 6; strip_i++) {
                     __leds[strip_i * MAX_NUM_LEDS + i] = color;
                 }
             }

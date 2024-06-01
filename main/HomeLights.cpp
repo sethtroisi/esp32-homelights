@@ -211,15 +211,17 @@ void hl_setup() {
      * seems not to be const expr. So I have to do this.
      */
 
-    NUM_LEDS = 64;
-    NUM_STRIPS = 8;
+    NUM_LEDS = 150;
+    NUM_STRIPS = 7;
     assert(8 <= MAX_NUM_STRIPS);
-    assert(150 <= MAX_NUM_LEDS);
+    assert(300 <= MAX_NUM_LEDS);
 
     // Dream Willow (This is 8 pins directly after VIN GND)
 
 #define GRID_STRAND_TYPE WS2812B
 #define GRID_COLOR_ORDER EOrder::RGB
+#define FIBER_LEDS 64
+#define TRUNK_LEDS 300
 
     //FastLED.addLeds<STRAND_TYPE, GPIO_NUM_13, COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, 150);
     //FastLED.addLeds<STRAND_TYPE, GPIO_NUM_12, COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, 150);
@@ -228,25 +230,29 @@ void hl_setup() {
 
     // Trunk Body (On the VIN/GND side)
     // Pads
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_26, GRID_COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_27, GRID_COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_14, GRID_COLOR_ORDER>(__leds, 2 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_12, GRID_COLOR_ORDER>(__leds, 3 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_13, GRID_COLOR_ORDER>(__leds, 4 * MAX_NUM_LEDS, NUM_LEDS);
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_18, GRID_COLOR_ORDER>(__leds, 5 * MAX_NUM_LEDS, NUM_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_26, GRID_COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, FIBER_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_27, GRID_COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, FIBER_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_14, GRID_COLOR_ORDER>(__leds, 2 * MAX_NUM_LEDS, FIBER_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_12, GRID_COLOR_ORDER>(__leds, 3 * MAX_NUM_LEDS, FIBER_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_13, GRID_COLOR_ORDER>(__leds, 4 * MAX_NUM_LEDS, FIBER_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_18, GRID_COLOR_ORDER>(__leds, 5 * MAX_NUM_LEDS, FIBER_LEDS);
     // This needs inverted color order but because of time pressure we just handle it in PostProcess
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_19, GRID_COLOR_ORDER>(__leds2, 0, 150);
-    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_23, GRID_COLOR_ORDER>(__leds2, 0, 150);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_19, GRID_COLOR_ORDER>(__leds2, 0, TRUNK_LEDS);
+    FastLED.addLeds<GRID_STRAND_TYPE, GPIO_NUM_23, GRID_COLOR_ORDER>(__leds2, 0, TRUNK_LEDS);
+
+    // LEDs generally go UP the trunk, which is backwards because start of strip is top of tube
+    is_reversed = true;
 
     FastLED.setCorrection(TypicalLEDStrip);
     FastLED.setBrightness(global_brightness);
-    //FastLED.setDither(DEFAULT_BRIGHTNESS < 255);
+    FastLED.setDither(DEFAULT_BRIGHTNESS < 255);
     //FastLED.setMaxPowerInVoltsAndMilliamps(5, 2000);
 
     // wait a tiny bit to clear.
     delay(10);
     clearLonger();
-    delay(10);
+    // Start off for a few seconds to connect / disconnect
+    delay(2000);
 
     // Default pattern to run.
     ProcessCommand(DEFAULT_PATTERN);
@@ -281,7 +287,7 @@ void hl_loop() {
         }
     }
 
-    // After 30-50 seconds go back to DEFAULT pattern
+    // After 30-50 seconds go to next pattern
     int32_t no_update_millis = millis() - last_update_t;
     const uint32_t fade_start = 80 * 1000;
     const uint32_t fade_down = fade_start + 7 * 1000;
@@ -319,47 +325,70 @@ void hl_loop() {
         global_frames += 1;
 
         if (current_pattern == METEOR_SHOWER) {
-            NUM_LEDS = 128;
+            NUM_LEDS = (TRUNK_LEDS>>1) + FIBER_LEDS;
         } else {
-            NUM_LEDS = 64;
+            NUM_LEDS = (TRUNK_LEDS>>1);
+        }
+
+        // HACK to make WAVING_OMBRE and OMBRE_WAVING_OMBRE faster
+        if (current_pattern == WAVING_OMBRE || current_pattern == OMBRE_WAVING_OMBRE) {
+            NUM_STRIPS = 2;
+        } else {
+            NUM_STRIPS = 7;
         }
 
 
         PatternProcessor();
         //PatternPostProcessor();
 
-        // PatternProcessor for all of DreamWillow
+        // THIS IS THE POST PROCESSOR CODE
 
         // Set 0th LED to let us know this is working
         //setPixel(0, ColorMap(256 * global_frames, 3));
 
-        if (current_pattern == METEOR_SHOWER) {
-            // // Have to reverse the leds for the trunk so that stuff goes up it
-            // for (uint32_t i = 0; i < 64/2; i++) {
-            //     uint32_t a = 7 * MAX_NUM_LEDS + i;
-            //     uint32_t b = 7 * MAX_NUM_LEDS + (64-1) - i;
-            //     CRGB ca = __leds[a];
-            //     __leds[a] = __leds[b];
-            //     __leds[b] = ca;
-            // }
+        // TRUNK IS STRIP 7 -> Index 6
+        uint32_t TRUNK_START = 6 * MAX_NUM_LEDS;
 
-            for (uint32_t i = 0; i < 64; i++) {
-                // Branches are a copy of trunk
-                //uint32_t j = 7 * MAX_NUM_LEDS + i;
-                // Branches "extend" the trunk
-                uint32_t j = 7 * MAX_NUM_LEDS + i + 64;
-                CRGB color = __leds[j];
+        if (current_pattern == WAVING_OMBRE || current_pattern == OMBRE_WAVING_OMBRE) {
+            // Copy strip 1 to TRUNK
+            // Copy strip 0 to all FIBER strips
+            for (uint32_t i = 0; i < (TRUNK_LEDS>>1); i++) {
+                __leds[TRUNK_START + i] = __leds[MAX_NUM_LEDS + i];
+            }
+
+            for (uint32_t i = 0; i < FIBER_LEDS; i++) {
+                // Each branches "extend" the main trunk.
+                CRGB color = __leds[i];
                 for (uint32_t strip_i = 0; strip_i < 6; strip_i++) {
                     __leds[strip_i * MAX_NUM_LEDS + i] = color;
                 }
             }
+        }
 
+        if (current_pattern == METEOR_SHOWER) {
+            // ONLY ON STRIP 0 SEE meteorShowerStep:454
+            // Effect is reversed and starts at 150+64 going back to 0
+            // trunks copies it [64,150+64]
+            // the branches "extend" the trunk [0, 64]
+
+            // Main trunk gets last 150 leds.
+            for (uint32_t i = 0; i < (TRUNK_LEDS>>1); i++) {
+                __leds[TRUNK_START + i] = __leds[i + FIBER_LEDS];
+            }
+
+            for (uint32_t i = 0; i < FIBER_LEDS; i++) {
+                // Each branches "extend" the main trunk (which is "start" of reversed strip).
+                CRGB color = __leds[i];
+                for (uint32_t strip_i = 0; strip_i < 6; strip_i++) {
+                    __leds[strip_i * MAX_NUM_LEDS + i] = color;
+                }
+            }
         }
 
 
         { // Post Processing to fix COLOR order difference between WS2812B and Neopixel (?) Strips
             for (uint32_t i = 0; i < NUM_LEDS; i++) {
-                uint32_t j = 7 * MAX_NUM_LEDS + i;
+                uint32_t j = TRUNK_START + i;
                 __leds2[i] = CRGB(__leds[j].g, __leds[j].r, __leds[j].b);
 //                __leds2[i] = CRGB(__leds[j].r, __leds[j].g, __leds[j].b);
             }
@@ -370,9 +399,9 @@ void hl_loop() {
         }
 
         { // Post Processing to double up the trunk strips
-            for (uint32_t i = 0; i < 150/2; i++) {
+            for (uint32_t i = 0; i < (TRUNK_LEDS>>1); i++) {
                 uint32_t a = 0 * MAX_NUM_LEDS + i;
-                uint32_t b = 0 * MAX_NUM_LEDS + 149 - i;
+                uint32_t b = 0 * MAX_NUM_LEDS + (TRUNK_LEDS-1) - i;
                 __leds2[b] = __leds2[a];
             }
         }
@@ -396,7 +425,7 @@ void hl_loop() {
     global_tDelta = (micros_now - micros_last) * INVERSE_MICROS;
 
     if (global_frames % 1000 == 0) {
-        ESP_LOGI(TAG, "%d | %llu => Pattern %d (%llu)", global_frames, micros_now, current_pattern, micros_after - micros_now);
+        ESP_LOGI(TAG, "%d | %llu => Pattern %d (%llu) will pause %u", global_frames, micros_now, current_pattern, micros_after - micros_now, loop_delay);
     }
 
     int32_t sleep_usec = std::max(0, std::max(1, loop_delay) * 1000 - delta_usec);

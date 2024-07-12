@@ -99,13 +99,13 @@ void FASTLED_safe_show() {
 
 // SN74HCT245 OUTPUT_ENABLE, active_low
 #define LIGHTS_DISABLE_PIN GPIO_NUM_15
-//#define ONBOARD_LED_PIN GPIO_NUM_2
+#define ONBOARD_LED_PIN GPIO_NUM_2
 
 static void blink_onboard_led(uint16_t duration_millis) {
-    // gpio_set_level(ONBOARD_LED_PIN, 1);
-    // vTaskDelay(pdMS_TO_TICKS(duration_millis));
-    // gpio_set_level(ONBOARD_LED_PIN, 0);
-    // vTaskDelay(pdMS_TO_TICKS(duration_millis));
+    gpio_set_level(ONBOARD_LED_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(duration_millis));
+    gpio_set_level(ONBOARD_LED_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(duration_millis));
 }
 
 static void enable_converter() {
@@ -113,7 +113,7 @@ static void enable_converter() {
     // board_led_operation, board_led_init
     // Onboard LED
 
-//    gpio_set_direction(ONBOARD_LED_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(ONBOARD_LED_PIN, GPIO_MODE_OUTPUT);
 
     {
         const bool disable_lights = 0;
@@ -525,7 +525,7 @@ void hl_setup() {
     //FastLED.addLeds<ESPIChipsets::APA102, DATA_PIN, CLK_PIN, EOrder::GRB, DATA_RATE_MHZ(25)>(__leds, NUM_LEDS);
 
     FastLED.setCorrection(TypicalLEDStrip);
-    //FastLED.setBrightness(DEFAULT_BRIGHTNESS);
+    FastLED.setBrightness(global_brightness);
     //FastLED.setDither(DEFAULT_BRIGHTNESS < 255);
     //FastLED.setMaxPowerInVoltsAndMilliamps(5, 2000);
 

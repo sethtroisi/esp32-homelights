@@ -20,6 +20,8 @@
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "esp_err.h"
+#include "nvs_flash.h"
+
 
 #include "consts.h"
 #include "globals.h"
@@ -38,8 +40,8 @@ using std::string;
 #include "globals.h"
 
 #include "tweaks.h"
-
 #include "PatternRunner.h"
+#include "wifi_sync.h"
 
 // Forward definition to avoid recursive includes
 //void loadMIDIEffects(short preset);
@@ -186,8 +188,10 @@ static bool next_button_debounced(void)
 
 void hl_setup() {
     ESP_LOGI(TAG, "hl setup");
+    nvs_flash_init(); // Needed for wifi
     enable_converter();
     configure_manual_button();
+    setup_wifi_sync();
 
     for (int i = 0; i < 20; i++) blink_onboard_led(10);
 
@@ -232,7 +236,7 @@ void hl_setup() {
     ProcessCommand(DEFAULT_PATTERN);
 }
 
-uint32_t fade_stage = 0;
+  uint32_t fade_stage = 0;
 uint32_t pre_fade_brightness = 0;
 
 void hl_loop() {
@@ -255,7 +259,61 @@ void hl_loop() {
         loadMIDIEffects(-2);
         // Stay on pattern for a long time
         last_update_t = 0xFFFFFFFF;
+
+        uint8_t data[] = {
+          0,
+          (uint8_t) current_pattern,
+          (uint8_t) 1,
+          (uint8_t) 0,
+        };
+        wifi_sync_send_broadcast(data, sizeof(data));
     }
+
+    {
+        const uint32_t INTERVAL_MS_WIFI_SYNC = 500'000;
+        static uint64_t next_wifi_sync       = micros() + INTERVAL_MS_WIFI_SYNC;
+        if (micros_now > next_wifi_sync) {
+            // ESP_LOGI(TAG, "Syncing Patterns");
+            uint8_t data[128];
+            uint8_t data_size;
+            if (wifi_sync_packet_handler(data, &data_size)) {
+                if (data_size == 4) {
+                ESP_LOGI(TAG, "Sync packet %u | {%3u, %3u, %3u, %3u}", data_size, data[0], data[1], data[2], data[3]);
+                current_pattern = (Pattern) data[1];
+                if (data[2] == 0) {
+                    loadMIDIEffects(-1);
+                    last_update_t = millis();
+                } else {
+                    last_update_t = 0xFFFFFFFF;
+                }
+
+                } else {
+                ESP_LOGI(TAG, "Got packet with %u bytes of data???", data_size);
+                }
+            }
+            next_wifi_sync = micros() + INTERVAL_MS_WIFI_SYNC;
+        }
+
+        // Every 100 seconds go next and force a sync
+        const uint32_t INTERVAL_MS_WIFI_NEXT = 50'000'000;
+        static uint64_t next_wifi_next       = micros() + INTERVAL_MS_WIFI_NEXT;
+        if (micros_now > next_wifi_next) {
+            static uint8_t counter = 0;
+            uint8_t data[] = {
+                counter++,
+                (uint8_t) current_pattern,
+                (uint8_t) 0,
+                (uint8_t) 0,
+            };
+            wifi_sync_send_broadcast(data, sizeof(data));
+            current_pattern = (Pattern) data[1];
+            ESP_LOGI(TAG, "Wifi Sync {%3u, %3u, %3u, %3u}", data[0], data[1], data[2], data[3]);
+            loadMIDIEffects(-1);
+            last_update_t = millis();
+            next_wifi_next = micros() + INTERVAL_MS_WIFI_NEXT;
+        }
+    }
+
 
     // After 30-50 seconds go to next pattern
     int32_t no_update_millis = millis() - last_update_t;

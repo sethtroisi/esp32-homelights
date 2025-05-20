@@ -221,7 +221,7 @@ void hl_setup() {
     gpio_set_direction(CLOCK_PIN, GPIO_MODE_OUTPUT);
     gpio_set_direction(DATA_PIN, GPIO_MODE_OUTPUT);
 
-    FastLED.addLeds<SK9822, DATA_PIN, CLOCK_PIN, EOrder::BRG, DATA_RATE_MHZ(12)>(__leds2, NUM_LEDS);
+    FastLED.addLeds<SK9822, DATA_PIN, CLOCK_PIN, EOrder::BRG, DATA_RATE_MHZ(12)>(__leds2, NUM_LEDS+1);
 
 
     FastLED.setCorrection(TypicalLEDStrip);
@@ -264,8 +264,9 @@ void hl_loop() {
         };
 
         loadNextEffects();
-        // Stay on pattern for a long time
-        last_update_t = millis_now + 3600'000;
+
+        // Stay on pattern for a long time (if pushed more than one time, one time is just forcing a sync)
+        last_update_t = millis_now + 3'600'000;
 
         wifi_sync_send_broadcast(data, sizeof(data));
     }
@@ -295,8 +296,8 @@ void hl_loop() {
             next_wifi_sync = micros() + INTERVAL_MS_WIFI_SYNC;
         }
 
-        // Every 100 seconds go next and force a sync
-        const uint32_t INTERVAL_MS_WIFI_NEXT = 50'000'000;
+        // Every 1000 seconds go next and force a sync
+        const uint32_t INTERVAL_MS_WIFI_NEXT = 1000'000'000;
         static uint64_t next_wifi_next       = micros() + INTERVAL_MS_WIFI_NEXT;
         if (micros_now > next_wifi_next) {
             static uint8_t counter = 0;
@@ -311,22 +312,22 @@ void hl_loop() {
             global_last_preset = data[1];
             ESP_LOGI(TAG, "Wifi Sync {%3u, %3u, %3u, %3u}", data[0], data[1], data[2], data[3]);
             loadNextEffects();
-            last_update_t = millis();
+            last_update_t = millis_now;
             next_wifi_next = micros() + INTERVAL_MS_WIFI_NEXT;
         }
     }
 
 
     // After 30-50 seconds go to next pattern
-    int32_t no_update_millis = millis() - last_update_t;
-    const uint32_t fade_start = 80 * 1000;
-    const uint32_t fade_down = fade_start + 7 * 1000;
-    const uint32_t fade_up   = fade_down + 8 * 1000;
-    bool no_recent_touches = (millis() > last_update_t) && (no_update_millis > fade_start);
+    int32_t no_update_millis = millis_now - last_update_t;
+    const uint32_t fade_start = 15 * 1000;
+    const uint32_t fade_down = fade_start + 4 * 1000;
+    const uint32_t fade_up   = fade_down + 3 * 1000;
+    bool no_recent_touches = (millis_now > last_update_t) && (no_update_millis > fade_start);
 
     if (fade_stage == 0) {
         if (no_recent_touches) {
-            // ESP_LOGI(TAG, "Starting fade after %d with brightness = %d", no_update_millis, global_brightness);
+            ESP_LOGI(TAG, "Starting fade after %ld with brightness = %d", no_update_millis, global_brightness);
 
             fade_stage = 1;
             // Fade to black, saving old brightness
@@ -335,15 +336,22 @@ void hl_loop() {
     } else if (fade_stage == 1) {
         // Linear fade down from fade_start to fade_down
         global_brightness = pre_fade_brightness - ((uint64_t) pre_fade_brightness * (no_update_millis - fade_start)) / (fade_down - fade_start);
-        // ESP_LOGI(TAG, "Fade down %d/%d -> %d", no_update_millis, fade_down, global_brightness);
         if (global_brightness == 0 || (no_update_millis > fade_down)) {
+            ESP_LOGI(TAG, "Fade down %ld/%lu -> %d", no_update_millis, fade_down, global_brightness);
             fade_stage = 2;
+
+            if (1) {
+                delay(100); // Nice pause at all black
+                global_brightness = 0;
+                FASTLED_safe_show();
+            }
+
             loadNextEffects();
         }
     } else if (fade_stage == 2) {
         global_brightness = ((uint64_t) pre_fade_brightness * (no_update_millis - fade_down)) / (fade_up - fade_down);
-        // ESP_LOGI(TAG, "Fade up %d/%d -> %d", no_update_millis, fade_up, global_brightness);
         if (global_brightness >= pre_fade_brightness || (no_update_millis > fade_up)) {
+            ESP_LOGI(TAG, "Fade up %ld/%lu -> %d", no_update_millis, fade_up, global_brightness);
             global_brightness = pre_fade_brightness;
             fade_stage = 0;
             last_update_t = millis();
@@ -359,7 +367,7 @@ void hl_loop() {
         // THIS IS THE POST PROCESSOR CODE
 
         // TODO map about 16 pixels backwards so that 1st led is in lower corner
-        if (1) {
+        if (0) {
             //THIS IS DESTRUCTIVE WHICH BREAKS (IN A FUN WAY SNAKE)
             std::rotate(&__leds[0], &__leds[17], &__leds[NUM_LEDS-1]);
             std::copy_n(__leds, NUM_LEDS, __leds2);
@@ -373,6 +381,7 @@ void hl_loop() {
             }
         }
 
+        __leds2[NUM_LEDS] = CRGB::Black;
         FASTLED_safe_show();
     }
 
@@ -389,7 +398,7 @@ void hl_loop() {
 
     int32_t sleep_usec = std::max(0l, std::max(1, loop_delay) * 1000l - delta_usec);
 
-    if (global_frames % 1000 == 0) {
+    if (global_frames % 2000 == 0) {
         ESP_LOGI(TAG, "%d | %llu => Pattern %d | took %llu will pause %ld for loop_delay %u",
             global_frames, micros_now,
             current_pattern,

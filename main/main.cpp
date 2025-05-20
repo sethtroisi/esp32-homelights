@@ -59,9 +59,9 @@ void app_main() {
   ESP_LOGI(TAG, "Creating task for home_lights()\n");
   xTaskCreate(&home_lights_run, "home lights", /*usStackDepth=*/ 4000, (void*) NULL, /*uxPriority=*/ 5, NULL);
 
-  size_t i = 0;
-  while (1) {
-    vTaskDelay(pdMS_TO_TICKS(10000));
-    // ESP_LOGI(TAG, "MAIN LOOP %u\n", ++i);
-  }
+  // size_t i = 0;
+  // while (1) {
+  //   vTaskDelay(pdMS_TO_TICKS(10000));
+  //   ESP_LOGI(TAG, "MAIN LOOP %u\n", ++i);
+  // }
 }

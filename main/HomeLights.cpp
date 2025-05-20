@@ -13,6 +13,7 @@
 // TODO where is order does this belong
 #include "HomeLights.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cassert>
 #include <cstdint>
@@ -44,7 +45,7 @@ using std::string;
 #include "wifi_sync.h"
 
 // Forward definition to avoid recursive includes
-//void loadMIDIEffects(short preset);
+//void loadNextEffects(short preset);
 
 
 // Some effect processors that have been extracted
@@ -99,7 +100,7 @@ void FASTLED_safe_show() {
 //--------------------------------------------------------------------------||
 
 // SN74HCT245 OUTPUT_ENABLE, active_low
-#define LIGHTS_DISABLE_PIN GPIO_NUM_26
+#define LIGHTS_DISABLE_PIN GPIO_NUM_25
 #define ONBOARD_LED_PIN GPIO_NUM_2
 
 static void blink_onboard_led(uint16_t duration_millis) {
@@ -138,7 +139,6 @@ static void configure_manual_button(void)
     gpio_reset_pin(BUTTON_INT_GPIO);
 
     gpio_set_direction(BUTTON_INT_GPIO, GPIO_MODE_INPUT);
-
 }
 
 static bool check_next_button(void)
@@ -215,10 +215,13 @@ void hl_setup() {
 
     // Dream Willow (This is 8 pins directly after VIN GND)
 
-#define CLOCK_PIN   18
-#define DATA_PIN    23
+#define CLOCK_PIN   GPIO_NUM_18
+#define DATA_PIN    GPIO_NUM_23
 
-    FastLED.addLeds<APA102, DATA_PIN, CLOCK_PIN, EOrder::BRG, DATA_RATE_MHZ(12)>(__leds, NUM_LEDS);
+    gpio_set_direction(CLOCK_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(DATA_PIN, GPIO_MODE_OUTPUT);
+
+    FastLED.addLeds<SK9822, DATA_PIN, CLOCK_PIN, EOrder::BRG, DATA_RATE_MHZ(12)>(__leds2, NUM_LEDS);
 
 
     FastLED.setCorrection(TypicalLEDStrip);
@@ -236,17 +239,16 @@ void hl_setup() {
     ProcessCommand(DEFAULT_PATTERN);
 }
 
-  uint32_t fade_stage = 0;
+
+uint32_t fade_stage = 0;
 uint32_t pre_fade_brightness = 0;
 
 void hl_loop() {
     const float INVERSE_MICROS = 1e-6;
 
-    // interupts are disabled during FastLed.show() so we have to guess at timing
-    uint64_t write_usec_guess = guess_show_timing_usec();
-
     micros_last = micros_now;
     micros_now = micros(); // 32 bit => overflows every hour!
+    uint32_t millis_now = micros_now / 1000l;
 
     if (global_tDelta < 0) global_tDelta = INVERSE_MICROS;
 
@@ -254,18 +256,17 @@ void hl_loop() {
     if (next_button_debounced()) {
         blink_onboard_led(50);
 
-        //RefreshLastUpdate();
-        // -2 => Next pattern (including OMBRE_WAVING_OMBRE)
-        loadMIDIEffects(-2);
-        // Stay on pattern for a long time
-        last_update_t = 0xFFFFFFFF;
-
         uint8_t data[] = {
           0,
-          (uint8_t) current_pattern,
-          (uint8_t) 1,
+          (uint8_t) global_last_preset,
+          (uint8_t) 0, // Updated 0ms ago -> sentital
           (uint8_t) 0,
         };
+
+        loadNextEffects();
+        // Stay on pattern for a long time
+        last_update_t = millis_now + 3600'000;
+
         wifi_sync_send_broadcast(data, sizeof(data));
     }
 
@@ -278,17 +279,17 @@ void hl_loop() {
             uint8_t data_size;
             if (wifi_sync_packet_handler(data, &data_size)) {
                 if (data_size == 4) {
-                ESP_LOGI(TAG, "Sync packet %u | {%3u, %3u, %3u, %3u}", data_size, data[0], data[1], data[2], data[3]);
-                current_pattern = (Pattern) data[1];
-                if (data[2] == 0) {
-                    loadMIDIEffects(-1);
-                    last_update_t = millis();
+                    global_last_preset = data[1];
+                    loadNextEffects();
+                    short delta = (data[2] << 8) + data[3];
+                    ESP_LOGI(TAG, "Sync packet %u | {%3u, %3u, %3u, %3u} -> %u delta", data_size, data[0], data[1], data[2], data[3], delta);
+                    if (delta == 0) {
+                        last_update_t = 0xFFFFFFFF;
+                    } else {
+                        last_update_t = millis_now - delta;
+                    }
                 } else {
-                    last_update_t = 0xFFFFFFFF;
-                }
-
-                } else {
-                ESP_LOGI(TAG, "Got packet with %u bytes of data???", data_size);
+                    ESP_LOGI(TAG, "Got packet with %u bytes of data???", data_size);
                 }
             }
             next_wifi_sync = micros() + INTERVAL_MS_WIFI_SYNC;
@@ -299,16 +300,17 @@ void hl_loop() {
         static uint64_t next_wifi_next       = micros() + INTERVAL_MS_WIFI_NEXT;
         if (micros_now > next_wifi_next) {
             static uint8_t counter = 0;
+            int delta = millis_now <= last_update_t ? 0 : millis_now - last_update_t;
             uint8_t data[] = {
                 counter++,
-                (uint8_t) current_pattern,
-                (uint8_t) 0,
-                (uint8_t) 0,
+                (uint8_t) global_last_preset,
+                (uint8_t) (delta >> 8),
+                (uint8_t) (delta & 0xFF),
             };
             wifi_sync_send_broadcast(data, sizeof(data));
-            current_pattern = (Pattern) data[1];
+            global_last_preset = data[1];
             ESP_LOGI(TAG, "Wifi Sync {%3u, %3u, %3u, %3u}", data[0], data[1], data[2], data[3]);
-            loadMIDIEffects(-1);
+            loadNextEffects();
             last_update_t = millis();
             next_wifi_next = micros() + INTERVAL_MS_WIFI_NEXT;
         }
@@ -336,7 +338,7 @@ void hl_loop() {
         // ESP_LOGI(TAG, "Fade down %d/%d -> %d", no_update_millis, fade_down, global_brightness);
         if (global_brightness == 0 || (no_update_millis > fade_down)) {
             fade_stage = 2;
-            loadMIDIEffects(-1);
+            loadNextEffects();
         }
     } else if (fade_stage == 2) {
         global_brightness = ((uint64_t) pre_fade_brightness * (no_update_millis - fade_down)) / (fade_up - fade_down);
@@ -353,12 +355,23 @@ void hl_loop() {
         global_frames += 1;
 
         PatternProcessor();
-        //PatternPostProcessor();
 
         // THIS IS THE POST PROCESSOR CODE
 
-        // Set 0th LED to let us know this is working
-        //setPixel(0, ColorMap(256 * global_frames, 3));
+        // TODO map about 16 pixels backwards so that 1st led is in lower corner
+        if (1) {
+            //THIS IS DESTRUCTIVE WHICH BREAKS (IN A FUN WAY SNAKE)
+            std::rotate(&__leds[0], &__leds[17], &__leds[NUM_LEDS-1]);
+            std::copy_n(__leds, NUM_LEDS, __leds2);
+        } else {
+            size_t j = 0;
+            for (size_t i = 16; i < NUM_LEDS; i++) {
+                __leds2[j++] = __leds[i];
+            }
+            for (size_t i = 0; i < 16; i++) {
+                __leds2[j++] = __leds[i];
+            }
+        }
 
         FASTLED_safe_show();
     }
@@ -369,20 +382,19 @@ void hl_loop() {
     }
 
     int32_t delta_usec = (micros_after - micros_now);
-    if (delta_usec < write_usec_guess) {
-        // FastLED disables interupts so micros & millis doesn't work.
-        delta_usec += write_usec_guess;
-    }
 
     global_t = micros_now * INVERSE_MICROS;
     // Broken if interupts are disabled and micros isn't updated
     global_tDelta = (micros_now - micros_last) * INVERSE_MICROS;
 
-    if (global_frames % 1000 == 0) {
-        ESP_LOGI(TAG, "%d | %llu => Pattern %d (%llu) will pause %u", global_frames, micros_now, current_pattern, micros_after - micros_now, loop_delay);
-    }
-
     int32_t sleep_usec = std::max(0l, std::max(1, loop_delay) * 1000l - delta_usec);
+
+    if (global_frames % 1000 == 0) {
+        ESP_LOGI(TAG, "%d | %llu => Pattern %d | took %llu will pause %ld for loop_delay %u",
+            global_frames, micros_now,
+            current_pattern,
+            micros_after - micros_now, sleep_usec, loop_delay);
+    }
 
     // Note: documentation says not to set long waits with delayMicroseconds
     delayMicroseconds(sleep_usec % 1000);

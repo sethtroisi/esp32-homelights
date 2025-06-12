@@ -66,19 +66,19 @@ static const char *TAG = "HomeLights";
 
 void logString(string key) {
 #if USE_SERIAL
-    ESP_LOGI(TAG, "%s\n", key.c_str());
+    ESP_LOGI(TAG, "%s", key.c_str());
 #endif
 }
 
 void logKeyValue(string key, string value) {
 #if USE_SERIAL
-    ESP_LOGI(TAG, "%s %s\n", key.c_str(), value.c_str());
+    ESP_LOGI(TAG, "%s %s", key.c_str(), value.c_str());
 #endif
 }
 
 void logValue(string key, float value) {
 #if USE_SERIAL
-    ESP_LOGI(TAG, "%s %f\n", key.c_str(), value);
+    ESP_LOGI(TAG, "%s %f", key.c_str(), value);
 #endif
 }
 
@@ -240,6 +240,7 @@ void hl_setup() {
 }
 
 
+uint32_t last_button_t = 0;
 uint32_t fade_stage = 0;
 uint32_t pre_fade_brightness = 0;
 
@@ -256,22 +257,31 @@ void hl_loop() {
     if (next_button_debounced()) {
         blink_onboard_led(50);
 
+        // Stay on pattern for a long time (if pushed more than one time, one time is just forcing a sync)
+        bool stay_awhile = (last_button_t + 5'000) > millis_now;
+        last_button_t = millis_now;
+        loadNextEffects();
+
         uint8_t data[] = {
           0,
           (uint8_t) global_last_preset,
-          (uint8_t) 0, // Updated 0ms ago -> sentital
+          (uint8_t) current_pattern,
           (uint8_t) 0,
+            (uint8_t) (stay_awhile ? 0 : 1), // Updated 0ms ago -> sentital
         };
-
-        loadNextEffects();
-
-        // Stay on pattern for a long time (if pushed more than one time, one time is just forcing a sync)
-        last_update_t = millis_now + 3'600'000;
-
         wifi_sync_send_broadcast(data, sizeof(data));
+
+        if (stay_awhile) {
+            last_update_t = millis_now + 3'600'000;
+        } else {
+            last_update_t = millis_now;
+        }
     }
 
     {
+        const uint32_t INTERVAL_MS_WIFI_NEXT = 25'000'000;
+        static uint64_t next_wifi_next       = micros() + INTERVAL_MS_WIFI_NEXT;
+
         const uint32_t INTERVAL_MS_WIFI_SYNC = 500'000;
         static uint64_t next_wifi_sync       = micros() + INTERVAL_MS_WIFI_SYNC;
         if (micros_now > next_wifi_sync) {
@@ -279,16 +289,32 @@ void hl_loop() {
             uint8_t data[128];
             uint8_t data_size;
             if (wifi_sync_packet_handler(data, &data_size)) {
-                if (data_size == 4) {
-                    global_last_preset = data[1];
-                    loadNextEffects();
-                    short delta = (data[2] << 8) + data[3];
-                    ESP_LOGI(TAG, "Sync packet %u | {%3u, %3u, %3u, %3u} -> %u delta", data_size, data[0], data[1], data[2], data[3], delta);
+                if (data_size == 5) {
+                    short delta = (data[3] << 8) + data[4];
+                    int current_delta = millis_now - last_update_t;
+
+                    ESP_LOGI(TAG, "Wifi Sync RX {%3u, %3u, %3u, %3u, %3u}",
+                        data[0], data[1], data[2], data[3], data[4]);
+
+                    if (global_last_preset == data[1] && current_pattern == data[2]) {
+                        ESP_LOGI(TAG, "Sync is same!");
+                    } else {
+                        ESP_LOGI(TAG, "Sync updating %u/%u to %u/%u!",
+                            (uint8_t) global_last_preset, (uint8_t)current_pattern,
+                            data[1], data[2]);
+                        global_last_preset = data[1] - 1;
+                        fade_stage = 0;
+                        loadNextEffects();
+                    }
+
+                    ESP_LOGI(TAG, "Sync delta %u updated to %u", current_delta, delta);
                     if (delta == 0) {
-                        last_update_t = 0xFFFFFFFF;
+                        last_update_t = millis_now + 3'600'000;
                     } else {
                         last_update_t = millis_now - delta;
                     }
+                    // Basically make this less likely to conflict
+                    next_wifi_next = micros() + INTERVAL_MS_WIFI_NEXT + 5'000;
                 } else {
                     ESP_LOGI(TAG, "Got packet with %u bytes of data???", data_size);
                 }
@@ -296,23 +322,18 @@ void hl_loop() {
             next_wifi_sync = micros() + INTERVAL_MS_WIFI_SYNC;
         }
 
-        // Every 1000 seconds go next and force a sync
-        const uint32_t INTERVAL_MS_WIFI_NEXT = 1000'000'000;
-        static uint64_t next_wifi_next       = micros() + INTERVAL_MS_WIFI_NEXT;
-        if (micros_now > next_wifi_next) {
+        if (micros_now > next_wifi_next && fade_stage == 0) {
             static uint8_t counter = 0;
-            int delta = millis_now <= last_update_t ? 0 : millis_now - last_update_t;
+            int delta = millis_now > last_update_t ? millis_now - last_update_t : 0;
             uint8_t data[] = {
                 counter++,
                 (uint8_t) global_last_preset,
+                (uint8_t) current_pattern,
                 (uint8_t) (delta >> 8),
                 (uint8_t) (delta & 0xFF),
             };
             wifi_sync_send_broadcast(data, sizeof(data));
-            global_last_preset = data[1];
-            ESP_LOGI(TAG, "Wifi Sync {%3u, %3u, %3u, %3u}", data[0], data[1], data[2], data[3]);
-            loadNextEffects();
-            last_update_t = millis_now;
+            ESP_LOGI(TAG, "Wifi Sync TX {%3u, %3u, %3u, %3u, %3u} (delta: %d)", data[0], data[1], data[2], data[3], data[4], delta);
             next_wifi_next = micros() + INTERVAL_MS_WIFI_NEXT;
         }
     }

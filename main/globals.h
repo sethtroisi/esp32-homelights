@@ -1,1 +1,1 @@
-/home/once/Scripts/Arduino/photon/HomeLights/src/globals.h
+/home/linux/Arduino/photon/HomeLights/src/globals.h

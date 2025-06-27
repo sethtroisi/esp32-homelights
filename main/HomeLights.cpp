@@ -221,8 +221,7 @@ void hl_setup() {
     gpio_set_direction(CLOCK_PIN, GPIO_MODE_OUTPUT);
     gpio_set_direction(DATA_PIN, GPIO_MODE_OUTPUT);
 
-    FastLED.addLeds<SK9822, DATA_PIN, CLOCK_PIN, EOrder::BRG, DATA_RATE_MHZ(12)>(__leds2, NUM_LEDS+1);
-
+    FastLED.addLeds<SK9822, DATA_PIN, CLOCK_PIN, EOrder::BGR, DATA_RATE_MHZ(12)>(__leds2, NUM_LEDS+1);
 
     FastLED.setCorrection(TypicalLEDStrip);
     FastLED.setBrightness(global_brightness);
@@ -233,7 +232,7 @@ void hl_setup() {
     delay(10);
     clearLonger();
     // Start off for a few seconds to connect / disconnect
-    delay(2000);
+    delay(1500);
 
     // Default pattern to run.
     ProcessCommand(DEFAULT_PATTERN);
@@ -278,7 +277,7 @@ void hl_loop() {
         }
     }
 
-    {
+    if (1) { // WIFI disabled while hacking
         const uint32_t INTERVAL_MS_WIFI_NEXT = 25'000'000;
         static uint64_t next_wifi_next       = micros() + INTERVAL_MS_WIFI_NEXT;
 
@@ -302,8 +301,11 @@ void hl_loop() {
                         ESP_LOGI(TAG, "Sync updating %u/%u to %u/%u!",
                             (uint8_t) global_last_preset, (uint8_t)current_pattern,
                             data[1], data[2]);
+                        if (fade_stage > 0) {
+                            global_brightness = pre_fade_brightness;
+                            fade_stage = 0;
+                        }
                         global_last_preset = data[1] - 1;
-                        fade_stage = 0;
                         loadNextEffects();
                     }
 
@@ -341,9 +343,9 @@ void hl_loop() {
 
     // After 30-50 seconds go to next pattern
     int32_t no_update_millis = millis_now - last_update_t;
-    const uint32_t fade_start = 15 * 1000;
-    const uint32_t fade_down = fade_start + 4 * 1000;
-    const uint32_t fade_up   = fade_down + 3 * 1000;
+    const uint32_t fade_start = 22 * 1000;
+    const uint32_t fade_down = fade_start + 4'000;
+    const uint32_t fade_up   = fade_down + 2'500;
     bool no_recent_touches = (millis_now > last_update_t) && (no_update_millis > fade_start);
 
     if (fade_stage == 0) {

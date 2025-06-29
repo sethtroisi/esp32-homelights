@@ -13,7 +13,17 @@ Default flash size to 4M, because all the devices I have are 4G.
 
 ##
 
+```
+find . -type l | wc
+# Should be 2 less because of WS2812Emulator
+ls ~/Scripts/Arduino/photon/HomeLights/src/*{.h,cpp} | wc
+ln -sf ~/Scripts/Arduino/photon/HomeLights/src/*{.h,cpp} .
+ln -sf ~/Scripts/Arduino/WS2812Emulator/Particle.{cpp,h} .
 ln -sf ~/FastLED/ components/FastLED
-ln -f -s ~/Arduino/photon/HomeLights/src/{homegrown_effects,consts,color_consts,adopted_effects}.h .
-ln -f -s ~/Arduino/photon/HomeLights/src/{PatternRunner,fake_shader,tweaks,globals}.{cpp,h} .
-ln -sf ~/Arduino/WS2812Emulator/Particle.{cpp,h} .
+
+# Manual linking
+#ln -f -s ~/Arduino/photon/HomeLights/src/{homegrown_effects,consts,color_consts,adopted_effects}.h .
+#ln -f -s ~/Arduino/photon/HomeLights/src/{PatternRunner,fake_shader,tweaks,globals}.{cpp,h} .
+#ln -sf ~/Arduino/WS2812Emulator/Particle.{cpp,h} .
+
+```

@@ -196,11 +196,10 @@ void hl_setup() {
     for (int i = 0; i < 20; i++) blink_onboard_led(10);
 
     /**
-     * v1 PCB layout is
+     * v3 - 2023-08-21 PCB layout is
      * Connectors: [1 2 3]  [4 5 6] [7 8 -]
      * --------------------------------------------
-     * pins:   D13, D12, D14, D27, D26, D25, D33, D32
-     * strips:           4    123?           7    8
+     * pins:   D18, D23, D19, D14, D13, D12, D27, D26
      */
 
     /**

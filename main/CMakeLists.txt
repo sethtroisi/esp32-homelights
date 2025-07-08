@@ -6,5 +6,5 @@ idf_component_register(
         "PatternRunner.cpp" "Particle.cpp" "globals.cpp" "fake_shader.cpp"
         "tweaks.cpp"
 
-    REQUIREs driver FastLED
+    REQUIRES driver FastLED
 )

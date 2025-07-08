@@ -55,8 +55,6 @@ using std::string;
 
 #define USE_SERIAL  1
 
-#define CAP_SENSOR_CODE 0
-
 static const char *TAG = "HomeLights";
 
 
@@ -192,68 +190,6 @@ static bool next_button_debounced(void)
 
 //--------------------------------------------------------------------------||
 
-// MPR121 stuff
-#include "mpr121.h"
-
-MPR121_t cap_sensor_a;
-MPR121_t cap_sensor_b;
-
-bool capSensorSetup(MPR121_t& cap_sensor, int16_t i2c_addr) {
-    const uint16_t touchThreshold = 40;
-	const uint16_t releaseThreshold = 20;
-
-    static const char *TAG = "MPR121";
-
-	ESP_LOGI(TAG, "CONFIG_I2C_ADDRESS=0x%X", i2c_addr);
-	ESP_LOGI(TAG, "CONFIG_SCL_GPIO=%d", CONFIG_SCL_GPIO);
-	ESP_LOGI(TAG, "CONFIG_SDA_GPIO=%d", CONFIG_SDA_GPIO);
-	ESP_LOGI(TAG, "CONFIG_IRQ_GPIO=%d", CONFIG_IRQ_GPIO);
-
- 	bool success = MPR121_begin(&cap_sensor, i2c_addr, touchThreshold, releaseThreshold, CONFIG_IRQ_GPIO, CONFIG_SDA_GPIO, CONFIG_SCL_GPIO);
- 	ESP_LOGI(TAG, "MPR121_begin=%d", success);
-
-
-    if (success) {
-        MPR121_setFFI(&cap_sensor, FFI_10); // AFE Configuration 1
-        MPR121_setSFI(&cap_sensor, SFI_10); // AFE Configuration 2
-        MPR121_setGlobalCDT(&cap_sensor, CDT_4US);  // reasonable for larger capacitances
-        MPR121_autoSetElectrodesDefault(&cap_sensor, true);	// autoset all electrode settings
-    } else {
-		switch (MPR121_getError(&cap_sensor)) {
-			case NO_ERROR:
-				ESP_LOGE(TAG, "no error");
-				break;
-			case ADDRESS_UNKNOWN:
-				ESP_LOGE(TAG, "incorrect address");
-				break;
-			case READBACK_FAIL:
-				ESP_LOGE(TAG, "readback failure");
-				break;
-			case OVERCURRENT_FLAG:
-				ESP_LOGE(TAG, "overcurrent on REXT pin");
-				break;
-			case OUT_OF_RANGE:
-				ESP_LOGE(TAG, "electrode out of range");
-				break;
-			case NOT_INITED:
-				ESP_LOGE(TAG, "not initialised");
-				break;
-			default:
-				ESP_LOGE(TAG, "unknown error");
-				break;
-		}
-	}
-
-#if 0
-	MPR121_setTouchThresholdAll(&cap_sensor, 40);	// this is the touch threshold - setting it low makes it more like a proximity trigger, default value is 40 for touch
-	MPR121_setReleaseThresholdAll(&cap_sensor, 20);	// this is the release threshold - must ALWAYS be smaller than the touch threshold, default value is 20 for touch
-#endif
-
-    return success;
-}
-
-
-
 void flashColorSync(CRGB color, uint32_t time_ms) {
     // Backup __leds
     memcpy(__leds2, __leds, sizeof(__leds));
@@ -295,161 +231,6 @@ void SetRippleEffect(Pattern pattern, CRGB color, float motion_speed) {
     current_pattern = pattern;
 }
 
-#if CAP_SENSOR_CODE
-bool checkCapSensorPattern() {
-	MPR121_updateAll(&cap_sensor_a);
-	MPR121_updateAll(&cap_sensor_b);
-
-    const uint16_t NUM_SENSORS = 24;
-    const uint16_t SENSORS_PER = 12;
-
-	for (int i = 0; i < NUM_SENSORS; i++) {
-        MPR121_t *ptr = (i < SENSORS_PER) ? &cap_sensor_a : &cap_sensor_b;
-        int s = i % SENSORS_PER;
-		if (MPR121_isNewTouch(ptr, s)) {
-			ESP_LOGI(TAG, "electrode %d(%d) was just touched", s, i);
-		} else if (MPR121_isNewRelease(ptr, s)) {
-			ESP_LOGI(TAG, "electrode %d(%d) was just released", s, i);
-		}
-	}
-
-    /*
-     * Logic is
-     *      Any (debounced) press -> flash a frame of its color (synconously and with a copy of leds)
-
-     *      2 matching plates
-     *          Flash color (more brightly) and change to that pattern
-     *      4 left colors (fire, water, earth, wind)
-     *          Rippling "flag" of 4 colors rotating clockwise
-     *      4 right colors
-     *          Rippling "flag" of 4 colors rotating counter-clockwise
-     *      All 8 color plates
-     *          ???
-     *      All left / right plate?
-     *          Ombre Rippling patterns with wind?
-     */
-
-    uint32_t last_data = cap_sensor_a.lastTouchData | (((uint32_t) cap_sensor_b.lastTouchData) << SENSORS_PER);
-    uint32_t cur_data = cap_sensor_a.touchData | (((uint32_t) cap_sensor_b.touchData) << SENSORS_PER);
-
-    // Don't do anything if current = last
-    if (last_data == cur_data) {
-        return false;
-    }
-
-    // Check total number of buttons pressed
-    uint8_t count = 0;
-    for (uint i = 0; i < NUM_SENSORS; i++) {
-        count += (cur_data >> i) & 1;
-    }
-
-    {
-        // Find if any extra are pressed
-        uint32_t new_data = cur_data - (last_data & cur_data);
-        if (new_data) {
-            uint8_t which = new_data | (new_data >> SENSORS_PER);
-            CRGB flash_color =
-                (which & 0b0001) ? ELEMENT_COLORS[0] :
-                    (which & 0b0010) ? ELEMENT_COLORS[1] :
-                        (which & 0b0100) ? ELEMENT_COLORS[2] :
-                            (which & 0b1000) ? ELEMENT_COLORS[3] :
-                                (which & 0b10000) ? CRGB::Black : CRGB::Purple;
-
-            ESP_LOGI(TAG, "new_data: %x -> CRGB(%2d,%2d,%2d)", new_data, flash_color.r, flash_color.g, flash_color.b);
-            flash_color = blend(flash_color, CRGB::Black, 128);
-            flashColorSync(flash_color, 150);
-        }
-    }
-
-    uint8_t sensor_pairs = cur_data & (cur_data >> SENSORS_PER);
-    if (count > 0 && cur_data != last_data) {
-        ESP_LOGI(TAG, "cur=0x%x count=%d | sensor_pairs=0x%x", cur_data, count, sensor_pairs);
-    }
-
-    if (count == 2) {
-        last_update_t = millis();
-        // Pairs
-        if (sensor_pairs == 0b00000001) {
-             /* Water */
-             //SetRippleEffect(WAVING, ELEMENT_COLORS[0], 1.5,    1.0);
-            global_cm = 0;
-            is_reversed = true;
-             ProcessCommand("OCEAN_WAVES");
-        }
-        if (sensor_pairs == 0b00000010) {
-            global_cm = 4; // RedOrange
-            is_reversed = false;
-            /* Fire  */
-            // SetRippleEffect(WAVING_OMBRE,       ELEMENT_COLORS[1], 0.002);
-            ProcessCommand("DRAINBOW");
-        } else if (sensor_pairs == 0b00000100) {
-            global_cm = 5;
-            is_reversed = false;
-            /* Earth */ SetRippleEffect(OMBRE_WAVING_OMBRE, ELEMENT_COLORS[2], 0.0015);
-        } else if (sensor_pairs == 0b00001000) {
-            global_cm = 0;
-            is_reversed = false;
-            /* Air   */ SetRippleEffect(WAVING,             ELEMENT_COLORS[3], 0.005);
-
-        } else if (sensor_pairs == 0b00010000) {
-            /* Rainbow */
-            global_cm = 0;
-            is_reversed = false;
-            ProcessCommand("RAINBOW");
-
-        } else if (sensor_pairs == 0b00100000) {
-            /* Snake, starting from opposite last color */
-            global_cm = 0;
-            is_reversed = false;
-
-            color_a_wheel_i = guessWheel(color_a) + 128 * 256;
-            for (int strip_i = 0; strip_i < NUM_STRIPS; strip_i++)
-                snake_colors[strip_i] = ColorMap(color_a_wheel_i);
-
-            ProcessCommand("SNAKE");
-
-        } else if (sensor_pairs == 0b01000000) {
-            /* Sparkles / Twinkle */
-            global_cm = 0;
-            is_reversed = false;
-            ProcessCommand("TWINKLE");
-        }
-
-    } else if (cur_data == 0xF) {
-            // TODO only forward
-            /* Four Left */
-            global_cm = 0;
-            is_reversed = false;
-            SetRippleEffect(WAVING_SEGMENTS_1, CRGB::Black, 0.004);
-    } else if (cur_data == (0xF << SENSORS_PER)) {
-            // TODO only backwards
-            /* Four Right */
-            global_cm = 0;
-            is_reversed = false;
-            SetRippleEffect(WAVING_SEGMENTS_1, CRGB::Black, -0.004);
-    } else if (sensor_pairs == 0b00001111) {
-            /* All Eight */
-            global_cm = 0;
-            is_reversed = false;
-            SetRippleEffect(WAVING_SEGMENTS_2, CRGB::Black, 0.001);
-
-    } else if (sensor_pairs == 0b1111111) {
-            /* All Eight */
-            global_cm = 0;
-            is_reversed = false;
-            ProcessCommand("RAVE");
-    }
-
-
-    if (count > 0 && cur_data != last_data) {
-        ESP_LOGI(TAG, "At end global_cm=%d", global_cm);
-    }
-
-    // Some human input
-    return true;
-}
-#endif // CAP_SENSOR_CODE
-
 //--------------------------------------------------------------------------||
 
 bool cap_init_success = false;
@@ -458,19 +239,6 @@ void hl_setup() {
     ESP_LOGI(TAG, "hl setup");
     enable_converter();
     configure_manual_button();
-
-#if CAP_SENSOR_CODE
-    cap_init_success = (
-        capSensorSetup(cap_sensor_a, CONFIG_I2C_ADDRESS + 1) &&
-        capSensorSetup(cap_sensor_b, CONFIG_I2C_ADDRESS)
-    );
-
-    if (!cap_init_success) {
-        ESP_LOGI(TAG, "bad init");
-        // Blink LEDs as error
-        for (int i = 0; i < 5; i++) blink_onboard_led(200);
-    }
-#endif // CAP_SENSOR_CODE
 
     for (int i = 0; i < 20; i++) blink_onboard_led(10);
 
@@ -554,12 +322,6 @@ void hl_loop() {
     micros_now = micros(); // 32 bit => overflows every hour!
 
     if (global_tDelta < 0) global_tDelta = INVERSE_MICROS;
-
-#if CAP_SENSOR_CODE
-    if (cap_init_success && checkCapSensorPattern()) {
-        last_human_input_t = millis();
-    }
-#endif
 
     // Check for manual pattern advance.
     if (next_button_debounced()) {

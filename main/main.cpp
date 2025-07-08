@@ -21,6 +21,10 @@
 #include "HomeLights.h"
 
 
+#define FASTLED_ESP32_I2S
+#include <FastLED.h>
+FASTLED_USING_NAMESPACE
+
 static const char *TAG = "LIGHTS";
 
 

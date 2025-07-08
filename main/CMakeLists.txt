@@ -5,4 +5,6 @@ idf_component_register(
     SRCS "main.cpp" "HomeLights.cpp"
         "PatternRunner.cpp" "Particle.cpp" "globals.cpp" "fake_shader.cpp"
         "tweaks.cpp"
+
+    REQUIREs driver FastLED
 )

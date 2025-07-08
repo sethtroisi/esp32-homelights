@@ -3,7 +3,7 @@
 # project subdirectory.
 #
 
-PROJECT_NAME := FastLED-idf
+PROJECT_NAME := FastLED
 
 include $(IDF_PATH)/make/project.mk
 

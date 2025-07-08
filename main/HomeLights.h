@@ -4,6 +4,9 @@
 // Main command processor
 
 #include "Particle.h"
+#include <cstring>
+
+using std::string;
 
 void logString(string key);
 void logKeyValue(string key, string value);

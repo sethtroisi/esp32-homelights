@@ -10,7 +10,6 @@
  *
  */
 
-// TODO where is order does this belong
 #include "HomeLights.h"
 
 #include <cmath>
@@ -28,8 +27,6 @@
 FASTLED_USING_NAMESPACE
 
 #include "color_consts.h"
-
-using std::string;
 
 //---------------------------------------------------------------------------||
 
@@ -96,7 +93,7 @@ void FASTLED_safe_show() {
 //--------------------------------------------------------------------------||
 
 // SN74HCT245 OUTPUT_ENABLE, active_low
-#define LIGHTS_DISABLE_PIN GPIO_NUM_15
+#define LIGHTS_DISABLE_PIN GPIO_NUM_25
 #define ONBOARD_LED_PIN GPIO_NUM_2
 
 static void blink_onboard_led(uint16_t duration_millis) {
@@ -243,17 +240,16 @@ void hl_setup() {
     for (int i = 0; i < 20; i++) blink_onboard_led(10);
 
     /**
-     * v0 PCB layout was
-     * [ D5 ] [ D4 ]
-     * [ D3 ] [ D2 ]
-     * [ A2 ] [ A3 ]
-     * [ A0 ] [ A1 ]
-     *
-     * v1 PCB layout is
+     * v3 - 2023-08-21 PCB layout is
      * Connectors: [1 2 3]  [4 5 6] [7 8 -]
      * --------------------------------------------
-     * pins:   D13, D12, D14, D27, D26, D25, D33, D32
-     * strips:           4    123?           7    8
+     * pins:   D18, D23, D19, D14, D13, D12, D27, D26
+     *
+     * v3 - 2023-08-21 LARGER PCB layout is
+     * Connectors: [1 2 3]  [4 5 6] [7 8 -]
+     * --------------------------------------------
+     * pins:   D26, D27, D14, D12, D13, D18, D19, D23
+     *
      */
 
     /**
@@ -265,32 +261,12 @@ void hl_setup() {
     NUM_STRIPS = 2;
     assert(NUM_STRIPS <= MAX_NUM_STRIPS);
 
-#define DATA_PIN_CONN_1 32
-#define DATA_PIN_CONN_2 33
-#define DATA_PIN_CONN_3 25
-#define DATA_PIN_CONN_4 26
-#define DATA_PIN_CONN_5 27
-#define DATA_PIN_CONN_6 14
-#define DATA_PIN_CONN_7 12
-#define DATA_PIN_CONN_8 13
-
-    // HACK FOR MOURNING OWL both strips are the "same"
-    FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_4, COLOR_ORDER>(__leds, NUM_LEDS + 3);
-    FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_5, COLOR_ORDER>(__leds, NUM_LEDS + 3);
-    FastLED.addLeds<STRAND_TYPE, DATA_PIN_CONN_6, COLOR_ORDER>(__leds, NUM_LEDS + 3);
-
-    // Dream Willow
-    // FastLED.addLeds<STRAND_TYPE, GPIO_NUM_12, COLOR_ORDER>(__leds, 0 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<STRAND_TYPE, GPIO_NUM_14, COLOR_ORDER>(__leds, 1 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<STRAND_TYPE, GPIO_NUM_27, COLOR_ORDER>(__leds, 2 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<STRAND_TYPE, GPIO_NUM_26, COLOR_ORDER>(__leds, 3 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<STRAND_TYPE, GPIO_NUM_25, COLOR_ORDER>(__leds, 4 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<STRAND_TYPE, GPIO_NUM_33, COLOR_ORDER>(__leds, 5 * MAX_NUM_LEDS, NUM_LEDS);
-    // FastLED.addLeds<STRAND_TYPE, GPIO_NUM_32, COLOR_ORDER>(__leds, 6 * MAX_NUM_LEDS, NUM_LEDS);
-
-//#define DATA_PIN GPIO_NUM_32
-//#define CLK_PIN GPIO_NUM_33
-    //FastLED.addLeds<ESPIChipsets::APA102, DATA_PIN, CLK_PIN, EOrder::GRB, DATA_RATE_MHZ(25)>(__leds, NUM_LEDS);
+    // Small Board
+    FastLED.addLeds<STRAND_TYPE, 18, COLOR_ORDER>(__leds, NUM_LEDS + 3);
+    FastLED.addLeds<STRAND_TYPE, 23, COLOR_ORDER>(__leds, NUM_LEDS + 3);
+    // large Board
+    //FastLED.addLeds<STRAND_TYPE, 26, COLOR_ORDER>(__leds, NUM_LEDS + 3);
+    //FastLED.addLeds<STRAND_TYPE, 27, COLOR_ORDER>(__leds, NUM_LEDS + 3);
 
     FastLED.setCorrection(TypicalLEDStrip);
     FastLED.setBrightness(global_brightness);
@@ -345,7 +321,7 @@ void hl_loop() {
 
     if (fade_stage == 0) {
         if (no_recent_touches) {
-            ESP_LOGI(TAG, "Starting fade after %d with brightness = %d", no_update_millis, global_brightness);
+            ESP_LOGI(TAG, "Starting fade after %ld with brightness = %d", no_update_millis, global_brightness);
 
             fade_stage = 1;
             // Fade to black, saving old brightness
@@ -353,7 +329,7 @@ void hl_loop() {
         }
     } else {
         if (no_update_millis < 1000) {
-            ESP_LOGI(TAG, "Fade up recent press %d", no_update_millis);
+            ESP_LOGI(TAG, "Fade up recent press %ld", no_update_millis);
             // Start bring up immediately.
             fade_stage = 2;
             global_brightness = pre_fade_brightness;
@@ -417,7 +393,7 @@ void hl_loop() {
         ESP_LOGI(TAG, "%d | %llu => Pattern %d (%llu)", global_frames, micros_now, current_pattern, micros_after - micros_now);
     }
 
-    int32_t sleep_usec = std::max(0, std::max(1, loop_delay) * 1000 - delta_usec);
+    int32_t sleep_usec = std::max<long int>(0, std::max(1, loop_delay) * 1000 - delta_usec);
 
     // Note: documentation says not to set long waits with delayMicroseconds
     delayMicroseconds(sleep_usec % 1000);
